@@ -1,100 +1,114 @@
 use super::Adapter;
 use crate::ptr::{NonNullPtr, Pointer};
-use std::marker::{PhantomData, PhantomPinned};
+use std::marker::PhantomData;
 use std::pin::Pin;
 use std::ptr::NonNull;
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Link<T, P = NonNull<T>>
 where
+    T: Unpin,
     P: Pointer<T>,
 {
     next_ptr: Option<Pin<NonNullPtr<T, P>>>,
-    _pin: PhantomPinned,
-    _marker: PhantomData<T>,
 }
-
-impl<T, P> Unpin for Link<T, P> where P: Pointer<T> {}
 
 impl<T, P> Link<T, P>
 where
+    T: Unpin,
     P: Pointer<T>,
 {
-    pub fn new() -> Self {
-        Self {
-            next_ptr: None,
-            _pin: PhantomPinned,
-            _marker: PhantomData,
-        }
+    pub const fn new() -> Self {
+        Self { next_ptr: None }
     }
 
-    pub fn is_linked(&self) -> bool {
+    pub const fn is_linked(&self) -> bool {
         self.next_ptr.is_some()
     }
 
-    pub fn unlink(&mut self) {
+    unsafe fn unlink(&mut self) {
         self.next_ptr = None;
     }
 }
 
-pub struct Iter<'a, T, A, P>
+impl<T, P> Default for Link<T, P>
 where
+    T: Unpin,
     P: Pointer<T>,
 {
-    item_ptr: *const T,
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T, P> Unpin for Link<T, P>
+where
+    T: Unpin,
+    P: Pointer<T>,
+{
+}
+
+pub struct Iter<'a, T, A, P>
+where
+    T: Unpin,
+    P: Pointer<T>,
+{
+    link_ptr: *const Link<T, P>,
     _marker: PhantomData<(&'a (), A, P)>,
 }
 
 impl<'a, T: 'a, A, P> Iterator for Iter<'a, T, A, P>
 where
     T: Unpin,
-    A: Adapter<T, Link = Link<T, P>>,
     P: Pointer<T>,
+    A: Adapter<T, Link = Link<T, P>>,
 {
     type Item = Pin<&'a T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.item_ptr.is_null() {
+        if self.link_ptr.is_null() {
             None
         } else {
-            let item = unsafe { &*self.item_ptr };
-            let item_link = A::as_link_ref(item);
-            self.item_ptr = NonNullPtr::as_ptr(&item_link.next_ptr);
-            Some(Pin::new(item))
+	    let next_ptr = &unsafe { &*self.link_ptr }.next_ptr;
+	    let item = unsafe { &*NonNullPtr::as_ptr(next_ptr) };
+	    self.link_ptr = A::as_link_ref(item);
+	    Some(Pin::new(item))
         }
     }
 }
 
 pub struct IterMut<'a, T, A, P>
 where
+    T: Unpin,
     P: Pointer<T>,
 {
-    item_ptr: *mut T,
+    link_ptr: *mut Link<T, P>,
     _marker: PhantomData<(&'a (), A, P)>,
 }
 
 impl<'a, T: 'a, A, P> Iterator for IterMut<'a, T, A, P>
 where
     T: Unpin,
-    A: Adapter<T, Link = Link<T, P>>,
     P: Pointer<T>,
+    A: Adapter<T, Link = Link<T, P>>,
 {
     type Item = Pin<&'a mut T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.item_ptr.is_null() {
+        if self.link_ptr.is_null() {
             None
         } else {
-            let item = unsafe { &mut *self.item_ptr };
-            let item_link = A::as_link_mut(item);
-            self.item_ptr = NonNullPtr::as_mut_ptr(&mut item_link.next_ptr);
-            Some(Pin::new(item))
+	    let next_ptr = &mut unsafe { &mut *self.link_ptr }.next_ptr;
+	    let item = unsafe { &mut *NonNullPtr::as_mut_ptr(next_ptr) };
+	    self.link_ptr = A::as_link_mut(item);
+	    Some(Pin::new(item))
         }
     }
 }
 
 pub struct IntoIter<'a, T, A, P>
 where
+    T: Unpin,
     P: Pointer<T>,
 {
     item: Pin<&'a mut SinglyLinkedList<T, A, P>>,
@@ -113,16 +127,16 @@ where
     }
 }
 
-#[derive(Debug, Default)]
+
+#[derive(Debug)]
 pub struct SinglyLinkedList<T, A, P = NonNull<T>>
 where
+    T: Unpin,
     P: Pointer<T>,
 {
-    head_ptr: Option<Pin<NonNullPtr<T, P>>>,
+    link: Link<T, P>,
     size: A,
 }
-
-impl<T, A, P> Unpin for SinglyLinkedList<T, A, P> where P: Pointer<T> {}
 
 impl<T, A, P> SinglyLinkedList<T, A, P>
 where
@@ -131,10 +145,7 @@ where
     A: Adapter<T, Link = Link<T, P>>,
 {
     pub fn new(_: A) -> Self {
-        Self {
-            head_ptr: None,
-            size: A::default(),
-        }
+        Self::default()
     }
 
     pub fn push_front(self: Pin<&mut Self>, mut data: NonNull<T>) {
@@ -143,17 +154,17 @@ where
 
         let self_ = Pin::into_inner(self);
         self_.size.increment();
-        let head_ptr = &mut self_.head_ptr;
+        let head_ptr = &mut self_.link.next_ptr;
         if let Some(first) = head_ptr {
             let first = unsafe { NonNull::new_unchecked(first.as_mut().get_mut()) };
-	    NonNullPtr::set(&mut data_link.next_ptr, first);
+            NonNullPtr::set(&mut data_link.next_ptr, first);
         }
         NonNullPtr::set(head_ptr, data);
     }
 
     pub fn pop_front(self: Pin<&mut Self>) -> Option<NonNull<T>> {
         let self_ = Pin::into_inner(self);
-        let head_ptr = &mut self_.head_ptr;
+        let head_ptr = &mut self_.link.next_ptr;
         if let Some(first) = head_ptr {
             self_.size.decrement();
             let mut data = unsafe { NonNull::new_unchecked(first.as_mut().get_mut()) };
@@ -163,7 +174,9 @@ where
             } else {
                 *head_ptr = None;
             }
-            A::as_link_mut(unsafe { data.as_mut() }).unlink();
+            unsafe {
+                A::as_link_mut(data.as_mut()).unlink();
+            }
             Some(data)
         } else {
             None
@@ -172,10 +185,17 @@ where
 
     pub fn front(self: Pin<&Self>) -> Option<Pin<&T>> {
         let self_ = Pin::into_inner(self);
-        let head_ptr = &self_.head_ptr;
-        if let Some(first) = head_ptr {
-            let first: Pin<&T> = first.as_ref();
-            Some(first)
+        if let Some(first) = &self_.link.next_ptr {
+            Some(first.as_ref())
+        } else {
+            None
+        }
+    }
+
+    pub fn front_mut(self: Pin<&mut Self>) -> Option<Pin<&mut T>> {
+        let self_ = Pin::into_inner(self);
+        if let Some(first) = &mut self_.link.next_ptr {
+            Some(first.as_mut())
         } else {
             None
         }
@@ -183,23 +203,21 @@ where
 
     pub fn iter(self: Pin<&Self>) -> Iter<T, A, P> {
         let self_ = Pin::into_inner(self);
-        let head_ptr = &self_.head_ptr;
         Iter {
-            item_ptr: NonNullPtr::as_ptr(head_ptr),
+            link_ptr: &self_.link,
             _marker: PhantomData,
         }
     }
 
     pub fn iter_mut(self: Pin<&mut Self>) -> IterMut<T, A, P> {
         let self_ = Pin::into_inner(self);
-        let head_ptr = &mut self_.head_ptr;
         IterMut {
-            item_ptr: NonNullPtr::as_mut_ptr(head_ptr),
+            link_ptr: &mut self_.link,
             _marker: PhantomData,
         }
     }
 
-    pub fn into_iter(self: Pin<&mut Self>) -> IntoIter<T, A, P> {
+    pub const fn into_iter(self: Pin<&mut Self>) -> IntoIter<T, A, P> {
         IntoIter { item: self }
     }
 
@@ -210,12 +228,52 @@ where
     pub fn count(self: Pin<&Self>) -> usize {
         self.size.count(self.iter())
     }
+
+    pub fn contains(self: Pin<&Self>, data: &T) -> bool
+    where
+	T: PartialEq<T>,
+    {
+	for it in self.iter() {
+	    if data.eq(it.get_ref()) {
+		return true
+	    }
+	}
+	false
+    }
+
+    pub fn append(mut self: Pin<&mut Self>, other: Pin<&mut Self>) {
+	let vec: Vec<_> = other.into_iter().collect();
+	for data in vec.into_iter().rev() {
+	    self.as_mut().push_front(data);
+	}
+    }
+}
+
+impl<T, A, P> Default for SinglyLinkedList<T, A, P>
+where
+    T: Unpin,
+    P: Pointer<T>,
+    A: Default,
+{
+    fn default() -> Self {
+        Self {
+            link: Link::new(),
+            size: A::default(),
+        }
+    }
+}
+
+impl<T, A, P> Unpin for SinglyLinkedList<T, A, P>
+where
+    T: Unpin,
+    P: Pointer<T>,
+{
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::Sized;
+    use crate::Size;
 
     #[derive(Debug)]
     struct X {
@@ -237,7 +295,7 @@ mod test {
     #[derive(Default, Debug)]
     struct XLink;
 
-    impl Sized for XLink {}
+    impl Size for XLink {}
 
     impl Adapter<X> for XLink {
         type Link = Link<X>;
@@ -258,15 +316,15 @@ mod test {
         lst.as_mut().push_front(X::new(2));
 
         let ptr = lst.as_mut().pop_front().unwrap();
-	let ptr = unsafe { Box::from_raw(ptr.as_ptr()) };
-	assert_eq!(ptr.link.is_linked(), false);
+        let ptr = unsafe { Box::from_raw(ptr.as_ptr()) };
+        assert_eq!(ptr.link.is_linked(), false);
         assert_eq!(ptr.x, 2);
 
         let ptr = lst.as_mut().pop_front().unwrap();
-	let ptr = unsafe { Box::from_raw(ptr.as_ptr()) };
-	assert_eq!(ptr.link.is_linked(), false);
+        let ptr = unsafe { Box::from_raw(ptr.as_ptr()) };
+        assert_eq!(ptr.link.is_linked(), false);
         assert_eq!(ptr.x, 1);
-	
+
         assert_eq!(lst.as_mut().pop_front(), None);
     }
 }

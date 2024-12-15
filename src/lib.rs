@@ -1,4 +1,4 @@
-pub trait Sized: Default {
+pub trait Size: Default {
     fn increment(&mut self) {}
 
     fn decrement(&mut self) {}
@@ -12,13 +12,13 @@ pub trait Sized: Default {
 
     fn is_empty<I>(&self, mut it: I) -> bool
     where
-	I: Iterator,
+        I: Iterator,
     {
-	it.next().is_some()
+        it.next().is_some()
     }
 }
 
-pub trait Adapter<T>: Sized {
+pub trait Adapter<T>: Size {
     type Link;
 
     fn as_link_ref(data: &T) -> &Self::Link;
@@ -28,5 +28,9 @@ pub trait Adapter<T>: Sized {
 
 pub mod ptr;
 
-pub mod slist;
-//pub mod list;
+// pub mod slist;
+
+// pub mod list;
+
+pub mod avltree;
+

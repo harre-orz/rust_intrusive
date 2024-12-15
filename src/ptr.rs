@@ -1,9 +1,12 @@
-use std::marker::PhantomData;
+use std::marker::{PhantomData, PhantomPinned};
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::ptr::{self, NonNull};
 
-pub trait Pointer<T> {
+pub trait Pointer<T>
+where
+    T: Unpin,
+{
     fn set(&self, ptr: NonNull<T>) -> Self;
 
     fn as_ref(&self) -> &T;
@@ -11,7 +14,10 @@ pub trait Pointer<T> {
     fn as_mut(&mut self) -> &mut T;
 }
 
-impl<T> Pointer<T> for NonNull<T> {
+impl<T> Pointer<T> for NonNull<T>
+where
+    T: Unpin,
+{
     fn set(&self, ptr: NonNull<T>) -> Self {
         ptr
     }
@@ -28,9 +34,11 @@ impl<T> Pointer<T> for NonNull<T> {
 #[derive(Debug)]
 pub(crate) struct NonNullPtr<T, P>
 where
+    T: Unpin,
     P: Pointer<T>,
 {
     ptr: P,
+    _pin: PhantomPinned,
     _marker: PhantomData<T>,
 }
 
@@ -39,13 +47,13 @@ where
     T: Unpin,
     P: Pointer<T>,
 {
-    pub fn set(self_: &mut Option<Pin<Self>>, ptr: NonNull<T>)
-    {
-	let self_ptr = self_ as *const Option<Pin<Self>> as *const P;
-	*self_ = Some(Pin::new(NonNullPtr {
-	    ptr: unsafe { &*self_ptr }.set(ptr),
-	    _marker: PhantomData,
-	}))
+    pub fn set(self_: &mut Option<Pin<Self>>, ptr: NonNull<T>) {
+        let self_ptr = self_ as *const Option<Pin<Self>> as *const P;
+        *self_ = Some(Pin::new(NonNullPtr {
+            ptr: unsafe { &*self_ptr }.set(ptr),
+            _pin: PhantomPinned,
+            _marker: PhantomData,
+        }))
     }
 
     pub fn as_ptr(ptr: &Option<Pin<Self>>) -> *const T {
@@ -76,6 +84,7 @@ where
 
 impl<T, P> Deref for NonNullPtr<T, P>
 where
+    T: Unpin,
     P: Pointer<T>,
 {
     type Target = T;
@@ -87,6 +96,7 @@ where
 
 impl<T, P> DerefMut for NonNullPtr<T, P>
 where
+    T: Unpin,
     P: Pointer<T>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
