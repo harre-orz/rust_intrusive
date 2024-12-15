@@ -1,43 +1,34 @@
-use std::ptr::{self, NonNull};
-use std::ops::{Deref, DerefMut};
 use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
+use std::ptr::{self, NonNull};
 
+pub trait Pointer<T> {
+    fn set(&self, ptr: NonNull<T>) -> Self;
 
-pub trait Pointer<T>  {
-    fn new(&self, ptr: NonNull<T>) -> Self;
-    
     fn as_ref(&self) -> &T;
 
     fn as_mut(&mut self) -> &mut T;
-
-    fn as_non_null(&mut self) -> NonNull<T>;
 }
 
 impl<T> Pointer<T> for NonNull<T> {
-    fn new(&self, ptr: NonNull<T>) -> Self {
-	ptr
+    fn set(&self, ptr: NonNull<T>) -> Self {
+        ptr
     }
-    
+
     fn as_ref(&self) -> &T {
-	unsafe { &*self.as_ptr() }
+        unsafe { &*self.as_ptr() }
     }
 
     fn as_mut(&mut self) -> &mut T {
-	unsafe { &mut *self.as_ptr() }
-    }
-
-    fn as_non_null(&mut self) -> NonNull<T> {
-	unsafe {
-	    NonNull::new_unchecked(self.as_ptr())
-	}
+        unsafe { &mut *self.as_ptr() }
     }
 }
 
 #[derive(Debug)]
 pub(crate) struct NonNullPtr<T, P>
 where
-    P: Pointer<T>
+    P: Pointer<T>,
 {
     ptr: P,
     _marker: PhantomData<T>,
@@ -48,63 +39,57 @@ where
     T: Unpin,
     P: Pointer<T>,
 {
-    pub fn pin(ptr: P) -> Pin<Self> {
-	Pin::new(NonNullPtr {
-	    ptr: ptr,
+    pub fn set(self_: &mut Option<Pin<Self>>, ptr: NonNull<T>)
+    {
+	let self_ptr = self_ as *const Option<Pin<Self>> as *const P;
+	*self_ = Some(Pin::new(NonNullPtr {
+	    ptr: unsafe { &*self_ptr }.set(ptr),
 	    _marker: PhantomData,
-	})
-    }
-
-    pub fn cast(ptr: &Option<Pin<Self>>) -> &P {
-	let ptr = ptr as *const Option<Pin<Self>>;
-	let ptr = ptr as *const P;
-	unsafe { &*ptr }
+	}))
     }
 
     pub fn as_ptr(ptr: &Option<Pin<Self>>) -> *const T {
-	if let Some(ptr) = ptr {
-	    let ptr: *const T = ptr.as_ref().get_ref();
-	    ptr
-	} else {
-	    ptr::null()
-	}
+        if let Some(ptr) = ptr {
+            ptr.as_ref().get_ref()
+        } else {
+            ptr::null()
+        }
     }
 
     pub fn as_mut_ptr(ptr: &mut Option<Pin<Self>>) -> *mut T {
-	if let Some(ptr) = ptr {
-	    let ptr: *mut T = ptr.as_mut().get_mut();
-	    ptr
-	} else {
-	    ptr::null_mut()
-	}
+        if let Some(ptr) = ptr {
+            ptr.as_mut().get_mut()
+        } else {
+            ptr::null_mut()
+        }
     }
 
-    pub fn as_raw(ptr: &mut Option<Pin<Self>>) -> Option<NonNull<T>> {
-	if let Some(ptr) = ptr {
-	    let ptr: *mut T = ptr.as_mut().get_mut();
-	    Some(unsafe {NonNull::new_unchecked(ptr) })
-	} else {
-	    None
-	}
+    pub fn as_raw_ptr(ptr: &mut Option<Pin<Self>>) -> Option<NonNull<T>> {
+        if let Some(ptr) = ptr {
+            let ptr = ptr.as_mut().get_mut();
+            Some(unsafe { NonNull::new_unchecked(ptr) })
+        } else {
+            None
+        }
     }
 }
 
 impl<T, P> Deref for NonNullPtr<T, P>
 where
-    P: Pointer<T>
+    P: Pointer<T>,
 {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-	self.ptr.as_ref()
+        self.ptr.as_ref()
     }
 }
 
 impl<T, P> DerefMut for NonNullPtr<T, P>
 where
-    P: Pointer<T>
+    P: Pointer<T>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-	self.ptr.as_mut()
+        self.ptr.as_mut()
     }
 }
