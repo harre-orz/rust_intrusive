@@ -28,9 +28,9 @@ pub trait Adapter<T>: Size {
 
 pub mod ptr;
 
-// pub mod slist;
+pub mod slist;
 
-// pub mod list;
+pub mod list;
 
-pub mod avltree;
+// pub mod avltree;
 

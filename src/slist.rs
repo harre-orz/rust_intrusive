@@ -83,7 +83,7 @@ where
     P: Pointer<T>,
 {
     link_ptr: *mut Link<T, P>,
-    _marker: PhantomData<(&'a (), A, P)>,
+    _marker: PhantomData<&'a A>,
 }
 
 impl<'a, T: 'a, A, P> Iterator for IterMut<'a, T, A, P>
@@ -149,7 +149,7 @@ where
     }
 
     pub fn push_front(self: Pin<&mut Self>, mut data: NonNull<T>) {
-        let data_link: &mut Link<T, P> = A::as_link_mut(unsafe { data.as_mut() });
+        let data_link = A::as_link_mut(unsafe { data.as_mut() });
         debug_assert_eq!(data_link.is_linked(), false);
 
         let self_ = Pin::into_inner(self);
@@ -168,7 +168,7 @@ where
         if let Some(first) = head_ptr {
             self_.size.decrement();
             let mut data = unsafe { NonNull::new_unchecked(first.as_mut().get_mut()) };
-            let first_link: &mut Link<T, P> = A::as_link_mut(first);
+            let first_link = A::as_link_mut(first);
             if let Some(first_next) = NonNullPtr::as_raw_ptr(&mut first_link.next_ptr) {
                 NonNullPtr::set(head_ptr, first_next);
             } else {

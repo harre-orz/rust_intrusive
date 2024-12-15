@@ -2,8 +2,9 @@ use std::marker::{PhantomData, PhantomPinned};
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::ptr::{self, NonNull};
+use std::fmt::Debug;
 
-pub trait Pointer<T>
+pub trait Pointer<T> : Debug
 where
     T: Unpin,
 {
