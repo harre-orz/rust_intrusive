@@ -21,9 +21,9 @@ where
 {
     pub const fn new() -> Self {
         Self {
-            next_ptr: None,
-            prev_ptr: None,
-        }
+	    next_ptr: None,
+	    prev_ptr: None,
+	}
     }
 
     pub const fn is_linked(&self) -> bool {
@@ -42,7 +42,7 @@ where
     P: Pointer<T>,
 {
     fn default() -> Self {
-        Self::new()
+	Self::new()
     }
 }
 
@@ -65,38 +65,36 @@ where
 impl<'a, T: 'a, A, P> Iterator for Iter<'a, T, A, P>
 where
     T: Unpin,
-    P: Pointer<T>,
+    P: Pointer<T> + 'a,
     A: Adapter<T, Link = Link<T, P>>,
 {
     type Item = Pin<&'a T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.link_ptr.is_null() {
-            None
-        } else {
-	    let next_ptr = &unsafe { &*self.link_ptr }.next_ptr;
-	    let item = unsafe { &*NonNullPtr::as_ptr(next_ptr) };
+	let link_ptr = unsafe { &*self.link_ptr };
+	if let Some(item) = &link_ptr.next_ptr {
 	    self.link_ptr = A::as_link_ref(item);
-	    Some(Pin::new(item))
-        }
+	    Some(item.as_ref())
+	} else {
+	    None
+	}
     }
 }
 
 impl<'a, T: 'a, A, P> DoubleEndedIterator for Iter<'a, T, A, P>
 where
     T: Unpin,
-    P: Pointer<T>,
+    P: Pointer<T> + 'a,
     A: Adapter<T, Link = Link<T, P>>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-        if self.link_ptr.is_null() {
-            None
-        } else {
-	    let prev_ptr = &unsafe { &*self.link_ptr }.prev_ptr;
-	    let item = unsafe { &*NonNullPtr::as_ptr(prev_ptr) };
+	let link_ptr = unsafe { &*self.link_ptr };
+	if let Some(item) = &link_ptr.prev_ptr {
 	    self.link_ptr = A::as_link_ref(item);
-	    Some(Pin::new(item))
-        }
+	    Some(item.as_ref())
+	} else {
+	    None
+	}
     }
 }
 
@@ -112,38 +110,36 @@ where
 impl<'a, T: 'a, A, P> Iterator for IterMut<'a, T, A, P>
 where
     T: Unpin,
-    P: Pointer<T>,
+    P: Pointer<T> + 'a,
     A: Adapter<T, Link = Link<T, P>>,
 {
     type Item = Pin<&'a mut T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-	if self.link_ptr.is_null() {
-            None
-        } else {
-	    let next_ptr = &mut unsafe { &mut *self.link_ptr }.next_ptr;
-	    let item = unsafe { &mut *NonNullPtr::as_mut_ptr(next_ptr) };
+	let link_ptr = unsafe { &mut *self.link_ptr };
+	if let Some(item) = &mut link_ptr.next_ptr {
 	    self.link_ptr = A::as_link_mut(item);
-	    Some(Pin::new(item))
-        }
+	    Some(item.as_mut())
+	} else {
+	    None
+	}
     }
 }
 
 impl<'a, T: 'a, A, P> DoubleEndedIterator for IterMut<'a, T, A, P>
 where
     T: Unpin,
-    P: Pointer<T>,
+    P: Pointer<T> + 'a,
     A: Adapter<T, Link = Link<T, P>>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-	if self.link_ptr.is_null() {
-            None
-        } else {
-	    let prev_ptr = &mut unsafe { &mut *self.link_ptr }.prev_ptr;
-	    let item = unsafe { &mut *NonNullPtr::as_mut_ptr(prev_ptr) };
+	let link_ptr = unsafe { &mut *self.link_ptr };
+	if let Some(item) = &mut link_ptr.prev_ptr {
 	    self.link_ptr = A::as_link_mut(item);
-	    Some(Pin::new(item))
-        }
+	    Some(item.as_mut())
+	} else {
+	    None
+	}
     }
 }
 
@@ -337,7 +333,7 @@ where
     }
 
     pub fn is_empty(self: Pin<&Self>) -> bool {
-        self.size.is_empty(self.iter())
+	self.link.next_ptr.is_some()
     }
 
     pub fn count(self: Pin<&Self>) -> usize {
@@ -361,13 +357,10 @@ impl<T, A, P> Default for DoublyLinkedList<T, A, P>
 where
     T: Unpin,
     P: Pointer<T>,
-    A: Default,
+    A: Adapter<T, Link = Link<T, P>>,
 {
     fn default() -> Self {
-        Self {
-	    link: Link::default(),
-            size: A::default(),
-        }
+        Self::new(A::default())
     }
 }
 

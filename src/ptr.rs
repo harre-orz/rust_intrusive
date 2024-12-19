@@ -1,10 +1,10 @@
 use std::marker::{PhantomData, PhantomPinned};
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
-use std::ptr::{self, NonNull};
+use std::ptr::NonNull;
 use std::fmt::Debug;
 
-pub trait Pointer<T> : Debug
+pub trait Pointer<T>
 where
     T: Unpin,
 {
@@ -55,22 +55,6 @@ where
             _pin: PhantomPinned,
             _marker: PhantomData,
         }))
-    }
-
-    pub fn as_ptr(ptr: &Option<Pin<Self>>) -> *const T {
-        if let Some(ptr) = ptr {
-            ptr.as_ref().get_ref()
-        } else {
-            ptr::null()
-        }
-    }
-
-    pub fn as_mut_ptr(ptr: &mut Option<Pin<Self>>) -> *mut T {
-        if let Some(ptr) = ptr {
-            ptr.as_mut().get_mut()
-        } else {
-            ptr::null_mut()
-        }
     }
 
     pub fn as_raw_ptr(ptr: &mut Option<Pin<Self>>) -> Option<NonNull<T>> {
