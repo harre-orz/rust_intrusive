@@ -4,12 +4,12 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::ptr::NonNull;
 
-
 pub struct Link<T, P>
 where
     T: Unpin,
     P: Pointer<T>,
 {
+    top_ptr: Option<Pin<NonNullPtr<T, P>>>,
     left_ptr: Option<Pin<NonNullPtr<T, P>>>,
     right_ptr: Option<Pin<NonNullPtr<T, P>>>,
 }
@@ -20,19 +20,21 @@ where
     P: Pointer<T>,
 {
     pub const fn new() -> Self {
-	Self {
-	    left_ptr: None,
-	    right_ptr: None,
-	}
+        Self {
+            top_ptr: None,
+            left_ptr: None,
+            right_ptr: None,
+        }
     }
 
     pub const fn is_linked(&self) -> bool {
-	self.left_ptr.is_some() || self.right_ptr.is_some()
+        self.left_ptr.is_some() || self.right_ptr.is_some()
     }
 
     pub unsafe fn unlink(&mut self) {
-	self.left_ptr = None;
-	self.right_ptr = None;
+        self.top_ptr = None;
+        self.left_ptr = None;
+        self.right_ptr = None;
     }
 }
 
@@ -42,7 +44,7 @@ where
     P: Pointer<T>,
 {
     fn default() -> Self {
-	Self::new()
+        Self::new()
     }
 }
 
@@ -69,35 +71,33 @@ where
     A: Adapter<T, Link = Link<T, P>>,
 {
     pub fn new(_: A) -> Self {
-	Self {
-	    link: Link::default(),
-	    size: A::default(),
-	}
+        Self {
+            link: Link::default(),
+            size: A::default(),
+        }
     }
 
-    fn search(&self, data: &T) {
-	
-    }
-    
+    fn search(&self, data: &T) {}
+
     pub fn get(self: Pin<&Self>, data: &T) -> Option<Pin<&T>>
     where
-	T: Ord
+        T: Ord,
     {
-	None
+        None
     }
 
     pub fn get_mut(self: Pin<&mut Self>, data: &T) -> Option<Pin<&mut T>>
     where
-	T: Ord
+        T: Ord,
     {
-	None
+        None
     }
 
     pub fn insert(self: Pin<&mut Self>, data: NonNull<T>) -> Option<NonNull<T>>
     where
-	T: Ord
+        T: Ord,
     {
-	None
+        None
     }
 }
 
@@ -108,7 +108,7 @@ where
     A: Adapter<T, Link = Link<T, P>>,
 {
     fn default() -> Self {
-	Self::new(A::default())
+        Self::new(A::default())
     }
 }
 

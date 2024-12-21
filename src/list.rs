@@ -5,25 +5,17 @@ use std::pin::Pin;
 use std::ptr::NonNull;
 
 #[derive(Debug)]
-pub struct Link<T, P = NonNull<T>>
-where
-    T: Unpin,
-    P: Pointer<T>,
-{
+pub struct Link<T, P = NonNull<T>> {
     next_ptr: Option<Pin<NonNullPtr<T, P>>>,
     prev_ptr: Option<Pin<NonNullPtr<T, P>>>,
 }
 
-impl<T, P> Link<T, P>
-where
-    T: Unpin,
-    P: Pointer<T>,
-{
+impl<T, P> Link<T, P> {
     pub const fn new() -> Self {
         Self {
-	    next_ptr: None,
-	    prev_ptr: None,
-	}
+            next_ptr: None,
+            prev_ptr: None,
+        }
     }
 
     pub const fn is_linked(&self) -> bool {
@@ -36,118 +28,97 @@ where
     }
 }
 
-impl<T, P> Default for Link<T, P>
-where
-    T: Unpin,
-    P: Pointer<T>,
-{
+impl<T, P> Default for Link<T, P> {
     fn default() -> Self {
-	Self::new()
+        Self::new()
     }
 }
 
-impl<T, P> Unpin for Link<T, P>
-where
-    T: Unpin,
-    P: Pointer<T>,
-{
-}
+impl<T, P> Unpin for Link<T, P> where T: Unpin {}
 
-pub struct Iter<'a, T, A, P>
-where
-    T: Unpin,
-    P: Pointer<T>,
-{
+pub struct Iter<'a, T, A, P> {
     link_ptr: *const Link<T, P>,
-    _marker: PhantomData<(&'a (), A, P)>,
+    _marker: PhantomData<&'a A>,
 }
 
-impl<'a, T: 'a, A, P> Iterator for Iter<'a, T, A, P>
+impl<'a, T, A, P> Iterator for Iter<'a, T, A, P>
 where
-    T: Unpin,
+    T: Unpin + 'a,
     P: Pointer<T> + 'a,
     A: Adapter<T, Link = Link<T, P>>,
 {
     type Item = Pin<&'a T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-	let link_ptr = unsafe { &*self.link_ptr };
-	if let Some(item) = &link_ptr.next_ptr {
-	    self.link_ptr = A::as_link_ref(item);
-	    Some(item.as_ref())
-	} else {
-	    None
-	}
+        let link_ptr = unsafe { &*self.link_ptr };
+        if let Some(item) = &link_ptr.next_ptr {
+            self.link_ptr = A::as_link_ref(item);
+            Some(item.as_ref())
+        } else {
+            None
+        }
     }
 }
 
-impl<'a, T: 'a, A, P> DoubleEndedIterator for Iter<'a, T, A, P>
+impl<'a, T, A, P> DoubleEndedIterator for Iter<'a, T, A, P>
 where
-    T: Unpin,
+    T: Unpin + 'a,
     P: Pointer<T> + 'a,
     A: Adapter<T, Link = Link<T, P>>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-	let link_ptr = unsafe { &*self.link_ptr };
-	if let Some(item) = &link_ptr.prev_ptr {
-	    self.link_ptr = A::as_link_ref(item);
-	    Some(item.as_ref())
-	} else {
-	    None
-	}
+        let link_ptr = unsafe { &*self.link_ptr };
+        if let Some(item) = &link_ptr.prev_ptr {
+            self.link_ptr = A::as_link_ref(item);
+            Some(item.as_ref())
+        } else {
+            None
+        }
     }
 }
 
-pub struct IterMut<'a, T, A, P>
-where
-    T: Unpin,
-    P: Pointer<T>,
-{
+pub struct IterMut<'a, T, A, P> {
     link_ptr: *mut Link<T, P>,
     _marker: PhantomData<&'a A>,
 }
 
-impl<'a, T: 'a, A, P> Iterator for IterMut<'a, T, A, P>
+impl<'a, T, A, P> Iterator for IterMut<'a, T, A, P>
 where
-    T: Unpin,
+    T: Unpin + 'a,
     P: Pointer<T> + 'a,
     A: Adapter<T, Link = Link<T, P>>,
 {
     type Item = Pin<&'a mut T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-	let link_ptr = unsafe { &mut *self.link_ptr };
-	if let Some(item) = &mut link_ptr.next_ptr {
-	    self.link_ptr = A::as_link_mut(item);
-	    Some(item.as_mut())
-	} else {
-	    None
-	}
+        let link_ptr = unsafe { &mut *self.link_ptr };
+        if let Some(item) = &mut link_ptr.next_ptr {
+            self.link_ptr = A::as_link_mut(item);
+            Some(item.as_mut())
+        } else {
+            None
+        }
     }
 }
 
-impl<'a, T: 'a, A, P> DoubleEndedIterator for IterMut<'a, T, A, P>
+impl<'a, T, A, P> DoubleEndedIterator for IterMut<'a, T, A, P>
 where
-    T: Unpin,
+    T: Unpin + 'a,
     P: Pointer<T> + 'a,
     A: Adapter<T, Link = Link<T, P>>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-	let link_ptr = unsafe { &mut *self.link_ptr };
-	if let Some(item) = &mut link_ptr.prev_ptr {
-	    self.link_ptr = A::as_link_mut(item);
-	    Some(item.as_mut())
-	} else {
-	    None
-	}
+        let link_ptr = unsafe { &mut *self.link_ptr };
+        if let Some(item) = &mut link_ptr.prev_ptr {
+            self.link_ptr = A::as_link_mut(item);
+            Some(item.as_mut())
+        } else {
+            None
+        }
     }
 }
 
-pub struct IntoIter<'a, T, A, P>
-where
-    T: Unpin,
-    P: Pointer<T>,
-{
+pub struct IntoIter<'a, T, A, P> {
     item: Pin<&'a mut DoublyLinkedList<T, A, P>>,
 }
 
@@ -175,13 +146,25 @@ where
     }
 }
 
-pub struct DoublyLinkedList<T, A, P>
-where
-    T: Unpin,
-    P: Pointer<T>,
-{
+pub struct DoublyLinkedList<T, A, P> {
     link: Link<T, P>,
     size: A,
+}
+
+impl<T, A, P> DoublyLinkedList<T, A, P>
+{
+    pub const fn new(adapter: A) -> Self {
+        Self {
+            link: Link::new(),
+            size: adapter,
+        }
+    }
+}
+
+impl<T, A, P> DoublyLinkedList<T, A, P>
+where
+    T: Unpin
+{
 }
 
 impl<T, A, P> DoublyLinkedList<T, A, P>
@@ -190,48 +173,44 @@ where
     P: Pointer<T>,
     A: Adapter<T, Link = Link<T, P>>,
 {
-    pub fn new(_: A) -> Self {
-        Self::default()
-    }
-
     pub fn push_front(self: Pin<&mut Self>, mut data: NonNull<T>) {
-	let data_link = A::as_link_mut(unsafe { data.as_mut() });
+        let data_link = A::as_link_mut(unsafe { data.as_mut() });
         debug_assert_eq!(data_link.is_linked(), false);
-	
-	let self_ = Pin::into_inner(self);
+
+        let self_ = Pin::into_inner(self);
         self_.size.increment();
         let head_ptr = &mut self_.link.next_ptr;
-	let tail_ptr = &mut self_.link.prev_ptr;
-	if let Some(first) = head_ptr {
-	    let first = unsafe { NonNull::new_unchecked(first.as_mut().get_mut()) };
+        let tail_ptr = &mut self_.link.prev_ptr;
+        if let Some(first) = head_ptr {
+            let first = unsafe { NonNull::new_unchecked(first.as_mut().get_mut()) };
             NonNullPtr::set(&mut data_link.next_ptr, first);
-	} else {
-	    NonNullPtr::set(tail_ptr, data);
-	}
-	NonNullPtr::set(head_ptr, data);
+        } else {
+            NonNullPtr::set(tail_ptr, data);
+        }
+        NonNullPtr::set(head_ptr, data);
     }
 
     pub fn push_back(self: Pin<&mut Self>, mut data: NonNull<T>) {
-	let data_link = A::as_link_mut(unsafe { data.as_mut() });
+        let data_link = A::as_link_mut(unsafe { data.as_mut() });
         debug_assert_eq!(data_link.is_linked(), false);
 
-	let self_ = Pin::into_inner(self);
+        let self_ = Pin::into_inner(self);
         self_.size.increment();
         let head_ptr = &mut self_.link.next_ptr;
-	let tail_ptr = &mut self_.link.prev_ptr;
-	if let Some(last) = tail_ptr {
-	    let last = unsafe { NonNull::new_unchecked(last.as_mut().get_mut()) };
+        let tail_ptr = &mut self_.link.prev_ptr;
+        if let Some(last) = tail_ptr {
+            let last = unsafe { NonNull::new_unchecked(last.as_mut().get_mut()) };
             NonNullPtr::set(&mut data_link.prev_ptr, last);
-	} else {
-	    NonNullPtr::set(head_ptr, data);
-	}
-	NonNullPtr::set(tail_ptr, data);
+        } else {
+            NonNullPtr::set(head_ptr, data);
+        }
+        NonNullPtr::set(tail_ptr, data);
     }
 
     pub fn pop_front(self: Pin<&mut Self>) -> Option<NonNull<T>> {
         let self_ = Pin::into_inner(self);
         let head_ptr = &mut self_.link.next_ptr;
-	let tail_ptr = &mut self_.link.prev_ptr;
+        let tail_ptr = &mut self_.link.prev_ptr;
         if let Some(first) = head_ptr {
             self_.size.decrement();
             let mut data = unsafe { NonNull::new_unchecked(first.as_mut().get_mut()) };
@@ -240,7 +219,7 @@ where
                 NonNullPtr::set(head_ptr, first_next);
             } else {
                 *head_ptr = None;
-		*tail_ptr = None;
+                *tail_ptr = None;
             }
             unsafe {
                 A::as_link_mut(data.as_mut()).unlink();
@@ -254,7 +233,7 @@ where
     pub fn pop_back(self: Pin<&mut Self>) -> Option<NonNull<T>> {
         let self_ = Pin::into_inner(self);
         let head_ptr = &mut self_.link.next_ptr;
-	let tail_ptr = &mut self_.link.prev_ptr;
+        let tail_ptr = &mut self_.link.prev_ptr;
         if let Some(last) = tail_ptr {
             self_.size.decrement();
             let mut data = unsafe { NonNull::new_unchecked(last.as_mut().get_mut()) };
@@ -263,7 +242,7 @@ where
                 NonNullPtr::set(head_ptr, last_prev);
             } else {
                 *head_ptr = None;
-		*tail_ptr = None;
+                *tail_ptr = None;
             }
             unsafe {
                 A::as_link_mut(data.as_mut()).unlink();
@@ -273,7 +252,7 @@ where
             None
         }
     }
-    
+
     pub fn front(self: Pin<&Self>) -> Option<Pin<&T>> {
         let self_ = Pin::into_inner(self);
         if let Some(first) = &self_.link.next_ptr {
@@ -310,7 +289,7 @@ where
         }
     }
 
-    pub fn iter(self: Pin<&Self>) -> Iter<T, A, P> {
+        pub fn iter(self: Pin<&Self>) -> Iter<T, A, P> {
         let self_ = Pin::into_inner(self);
         Iter {
             link_ptr: &self_.link,
@@ -326,14 +305,12 @@ where
         }
     }
 
-    pub fn into_iter(self: Pin<&mut Self>) -> IntoIter<T, A, P> {
-	IntoIter {
-	    item: self
-	}
+    pub fn is_empty(self: Pin<&Self>) -> bool {
+        self.link.next_ptr.is_none()
     }
 
-    pub fn is_empty(self: Pin<&Self>) -> bool {
-	self.link.next_ptr.is_some()
+    pub fn into_iter(self: Pin<&mut Self>) -> IntoIter<T, A, P> {
+        IntoIter { item: self }
     }
 
     pub fn count(self: Pin<&Self>) -> usize {
@@ -342,34 +319,27 @@ where
 
     pub fn contains(self: Pin<&Self>, data: &T) -> bool
     where
-	T: PartialEq<T>,
+        T: PartialEq<T>,
     {
-	for it in self.iter() {
-	    if data.eq(it.get_ref()) {
-		return true
-	    }
-	}
-	false
+        for it in self.iter() {
+            if data.eq(it.get_ref()) {
+                return true;
+            }
+        }
+        false
     }
 }
 
 impl<T, A, P> Default for DoublyLinkedList<T, A, P>
 where
-    T: Unpin,
-    P: Pointer<T>,
-    A: Adapter<T, Link = Link<T, P>>,
+    A: Default,
 {
     fn default() -> Self {
         Self::new(A::default())
     }
 }
 
-impl<T, A, P> Unpin for DoublyLinkedList<T, A, P>
-where
-    T: Unpin,
-    P: Pointer<T>,
-{
-}
+impl<T, A, P> Unpin for DoublyLinkedList<T, A, P> where T: Unpin {}
 
 #[cfg(test)]
 mod test {

@@ -1,13 +1,10 @@
+use std::fmt::Debug;
 use std::marker::{PhantomData, PhantomPinned};
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::ptr::NonNull;
-use std::fmt::Debug;
 
-pub trait Pointer<T>
-where
-    T: Unpin,
-{
+pub trait Pointer<T> {
     fn set(&self, ptr: NonNull<T>) -> Self;
 
     fn as_ref(&self) -> &T;
@@ -15,10 +12,7 @@ where
     fn as_mut(&mut self) -> &mut T;
 }
 
-impl<T> Pointer<T> for NonNull<T>
-where
-    T: Unpin,
-{
+impl<T> Pointer<T> for NonNull<T> {
     fn set(&self, ptr: NonNull<T>) -> Self {
         ptr
     }
@@ -33,11 +27,7 @@ where
 }
 
 #[derive(Debug)]
-pub(crate) struct NonNullPtr<T, P>
-where
-    T: Unpin,
-    P: Pointer<T>,
-{
+pub(crate) struct NonNullPtr<T, P> {
     ptr: P,
     _pin: PhantomPinned,
     _marker: PhantomData<T>,
@@ -69,7 +59,6 @@ where
 
 impl<T, P> Deref for NonNullPtr<T, P>
 where
-    T: Unpin,
     P: Pointer<T>,
 {
     type Target = T;
@@ -81,7 +70,6 @@ where
 
 impl<T, P> DerefMut for NonNullPtr<T, P>
 where
-    T: Unpin,
     P: Pointer<T>,
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
