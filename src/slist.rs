@@ -195,7 +195,7 @@ where
         self.link.next_ptr.is_none()
     }
 
-    pub fn count(self: Pin<&Self>) -> usize {
+    pub fn len(self: Pin<&Self>) -> usize {
         self.size.count(self.iter())
     }
 
@@ -273,12 +273,12 @@ mod test {
     fn test() {
         let mut lst = Box::pin(SinglyLinkedList::new(XLink));
 	assert_eq!(lst.as_ref().is_empty(), true);
-	assert_eq!(lst.as_ref().count(), 0);
+	assert_eq!(lst.as_ref().len(), 0);
         lst.as_mut().push_front(X::new(1));
         lst.as_mut().push_front(X::new(2));
 
 	assert_eq!(lst.as_ref().is_empty(), false);
-	assert_eq!(lst.as_ref().count(), 2);
+	assert_eq!(lst.as_ref().len(), 2);
 
         let ptr = lst.as_mut().pop_front().unwrap();
         let ptr = unsafe { Box::from_raw(ptr.as_ptr()) };

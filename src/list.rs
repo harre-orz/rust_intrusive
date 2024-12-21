@@ -289,7 +289,7 @@ where
         }
     }
 
-        pub fn iter(self: Pin<&Self>) -> Iter<T, A, P> {
+    pub fn iter(self: Pin<&Self>) -> Iter<T, A, P> {
         let self_ = Pin::into_inner(self);
         Iter {
             link_ptr: &self_.link,
@@ -313,7 +313,7 @@ where
         IntoIter { item: self }
     }
 
-    pub fn count(self: Pin<&Self>) -> usize {
+    pub fn len(self: Pin<&Self>) -> usize {
         self.size.count(self.iter())
     }
 

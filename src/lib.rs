@@ -1,3 +1,5 @@
+use std::cmp::Ordering;
+
 pub trait Size: Default {
     fn increment(&mut self) {}
 
@@ -24,6 +26,10 @@ pub trait Adapter<T>: Size {
     fn as_link_ref(data: &T) -> &Self::Link;
 
     fn as_link_mut(data: &mut T) -> &mut Self::Link;
+}
+
+pub trait OrdAdapter<T> : Adapter<T> {
+    fn cmp(left: &T, right: &T) -> Ordering;
 }
 
 pub mod ptr;
