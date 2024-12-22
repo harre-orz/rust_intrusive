@@ -105,6 +105,7 @@ where
 
 pub struct Iter<'a, T, A, P> {
     item_ptr: *const Option<Pin<NonNullPtr<T, P>>>,
+    init: bool,
     _marker: PhantomData<&'a A>,
 }
 
@@ -117,6 +118,16 @@ where
     type Item = Pin<&'a T>;
 
     fn next(&mut self) -> Option<Self::Item> {
+	if !self.init {
+	    self.init = true;
+	    while let Some(item) = unsafe { &*self.item_ptr } {
+	        if let Some(_) = &A::as_link_ref(item).left_ptr {
+		    self.item_ptr = &A::as_link_ref(item).left_ptr;
+	        } else {
+		    break
+	        }
+	    }
+	}
 	if let Some(item) = unsafe { &*self.item_ptr } {
 	    let item: &T = item;
 
@@ -153,6 +164,16 @@ where
     A: Adapter<T, Link = Link<T, P>>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
+	if !self.init {
+	    self.init = true;
+	    while let Some(item) = unsafe { &*self.item_ptr } {
+	        if let Some(_) = &A::as_link_ref(item).right_ptr {
+		    self.item_ptr = &A::as_link_ref(item).right_ptr;
+	        } else {
+		    break
+	        }
+	    }
+	}
 	if let Some(item) = unsafe { &*self.item_ptr } {
 	    let item: &T = item;
 
@@ -185,6 +206,7 @@ where
 
 pub struct IterMut<'a, T, A, P> {
     item_ptr: *mut Option<Pin<NonNullPtr<T, P>>>,
+    init: bool,
     _marker: PhantomData<&'a A>,
 }
 
@@ -197,6 +219,16 @@ where
     type Item = Pin<&'a mut T>;
 
     fn next(&mut self) -> Option<Self::Item> {
+	if !self.init {
+	    self.init = true;
+	    while let Some(item) = unsafe { &mut *self.item_ptr } {
+	        if let Some(_) = &mut A::as_link_mut(item).left_ptr {
+		    self.item_ptr = &mut A::as_link_mut(item).left_ptr;
+	        } else {
+		    break
+	        }
+	    }
+	}
 	if let Some(item) = unsafe { &mut *self.item_ptr } {
 	    let item: &mut T = item;
 
@@ -233,6 +265,16 @@ where
     A: Adapter<T, Link = Link<T, P>>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
+	if !self.init {
+	    self.init = true;
+	    while let Some(item) = unsafe { &mut *self.item_ptr } {
+	        if let Some(_) = &mut A::as_link_mut(item).right_ptr {
+		    self.item_ptr = &mut A::as_link_mut(item).right_ptr;
+	        } else {
+		    break
+	        }
+	    }
+	}
 	if let Some(item) = unsafe { &mut *self.item_ptr } {
 	    let item: &mut T = item;
 
@@ -333,6 +375,30 @@ where
 	}
     }
 
+    pub fn pop_front(self: Pin<&mut Self>) -> Option<NonNull<T>> {
+	None
+    }
+
+    pub fn pop_back(self: Pin<&mut Self>) -> Option<NonNull<T>> {
+	None
+    }
+
+    pub fn front(self: Pin<&Self>) -> Option<&T> {
+	None
+    }
+
+    pub fn front_mut(self: Pin<&mut Self>) -> Option<&mut T> {
+	None
+    }
+
+    pub fn back(self: Pin<&Self>) -> Option<&T> {
+	None
+    }
+    
+    pub fn back_mut(self: Pin<&mut Self>) -> Option<&mut T> {
+	None
+    }
+
     pub fn insert(self: Pin<&mut Self>, mut data: NonNull<T>) -> Option<NonNull<T>>
     {
 	let data_link = A::as_link_mut(unsafe { data.as_mut() });
@@ -406,16 +472,18 @@ where
 
     pub fn iter(self: Pin<&Self>) -> Iter<T, A, P> {
 	let self_ = Pin::into_inner(self);
-	let mut item_ptr: *const _ = &self_.root;
-	while let Some(item) = unsafe { &*item_ptr } {
-	    if let Some(_) = &A::as_link_ref(item).left_ptr {
-		item_ptr = &A::as_link_ref(item).left_ptr;
-	    } else {
-		break
-	    }
-	}
 	Iter {
-	    item_ptr: item_ptr,
+	    item_ptr: &self_.root,
+	    init: false,
+	    _marker: PhantomData,
+	}
+    }
+
+    pub fn iter_mut(self: Pin<&mut Self>) -> IterMut<T, A, P> {
+	let self_ = Pin::into_inner(self);
+	IterMut {
+	    item_ptr: &mut self_.root,
+	    init: false,
 	    _marker: PhantomData,
 	}
     }
