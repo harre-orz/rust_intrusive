@@ -28,7 +28,7 @@ pub trait Adapter<T>: Size {
     fn as_link_mut(data: &mut T) -> &mut Self::Link;
 }
 
-pub trait OrdAdapter<T> : Adapter<T> {
+pub trait OrdAdapter<T>: Adapter<T> {
     fn cmp(left: &T, right: &T) -> Ordering;
 }
 

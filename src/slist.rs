@@ -102,8 +102,7 @@ pub struct SinglyLinkedList<T, A, P = NonNull<T>> {
     size: A,
 }
 
-impl<T, A, P> SinglyLinkedList<T, A, P>
-{
+impl<T, A, P> SinglyLinkedList<T, A, P> {
     pub const fn new(adapter: A) -> Self {
         Self {
             link: Link::new(),
@@ -272,13 +271,13 @@ mod test {
     #[test]
     fn test() {
         let mut lst = Box::pin(SinglyLinkedList::new(XLink));
-	assert_eq!(lst.as_ref().is_empty(), true);
-	assert_eq!(lst.as_ref().len(), 0);
+        assert_eq!(lst.as_ref().is_empty(), true);
+        assert_eq!(lst.as_ref().len(), 0);
         lst.as_mut().push_front(X::new(1));
         lst.as_mut().push_front(X::new(2));
 
-	assert_eq!(lst.as_ref().is_empty(), false);
-	assert_eq!(lst.as_ref().len(), 2);
+        assert_eq!(lst.as_ref().is_empty(), false);
+        assert_eq!(lst.as_ref().len(), 2);
 
         let ptr = lst.as_mut().pop_front().unwrap();
         let ptr = unsafe { Box::from_raw(ptr.as_ptr()) };

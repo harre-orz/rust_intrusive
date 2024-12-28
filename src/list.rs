@@ -151,8 +151,7 @@ pub struct DoublyLinkedList<T, A, P> {
     size: A,
 }
 
-impl<T, A, P> DoublyLinkedList<T, A, P>
-{
+impl<T, A, P> DoublyLinkedList<T, A, P> {
     pub const fn new(adapter: A) -> Self {
         Self {
             link: Link::new(),
@@ -161,11 +160,7 @@ impl<T, A, P> DoublyLinkedList<T, A, P>
     }
 }
 
-impl<T, A, P> DoublyLinkedList<T, A, P>
-where
-    T: Unpin
-{
-}
+impl<T, A, P> DoublyLinkedList<T, A, P> where T: Unpin {}
 
 impl<T, A, P> DoublyLinkedList<T, A, P>
 where
