@@ -32,8 +32,8 @@ impl<T, P> Default for Link<T, P> {
 impl<T, P> Unpin for Link<T, P> where T: Unpin {}
 
 pub struct Iter<'a, T, A, P> {
-    link_ptr: *const Link<T, P>,
-    _marker: PhantomData<&'a A>,
+    link_ptr: Option<&'a Pin<NonNullPtr<T, P>>>,
+    _marker: PhantomData<A>,
 }
 
 impl<'a, T, A, P> Iterator for Iter<'a, T, A, P>
@@ -45,10 +45,11 @@ where
     type Item = Pin<&'a T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let link_ptr = unsafe { &*self.link_ptr };
-        if let Some(item) = &link_ptr.next_ptr {
-            self.link_ptr = A::as_link_ref(item);
-            Some(item.as_ref())
+        if let Some(item) = self.link_ptr.take() {
+            let item = item.as_ref();
+            let link= A::as_link_ref(item.get_ref());
+            self.link_ptr = link.next_ptr.as_ref();
+            Some(item)
         } else {
             None
         }
@@ -56,22 +57,23 @@ where
 }
 
 pub struct IterMut<'a, T, A, P> {
-    link_ptr: *mut Link<T, P>,
-    _marker: PhantomData<&'a A>,
+    link_ptr: Option<& 'a mut Pin<NonNullPtr<T, P>>>,
+    _marker: PhantomData<A>,
 }
 
 impl<'a, T, A, P> Iterator for IterMut<'a, T, A, P>
 where
-    T: Unpin + 'a,
-    P: Pointer<T> + 'a,
+    T: Unpin,
+    P: Pointer<T>,
     A: Adapter<T, Link = Link<T, P>>,
 {
     type Item = Pin<&'a mut T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let link_ptr = unsafe { &mut *self.link_ptr };
-        if let Some(item) = &mut link_ptr.next_ptr {
-            self.link_ptr = A::as_link_mut(item);
+        if let Some(item) = self.link_ptr.take() {
+            let t = item.as_mut().get_mut() as *mut T;
+            let link = A::as_link_mut(unsafe { &mut *t });
+            self.link_ptr = link.next_ptr.as_mut();
             Some(item.as_mut())
         } else {
             None
@@ -126,9 +128,9 @@ where
         let head_ptr = &mut self_.link.next_ptr;
         if let Some(first) = head_ptr {
             let first = unsafe { NonNull::new_unchecked(first.as_mut().get_mut()) };
-            NonNullPtr::set(&mut data_link.next_ptr, first);
+            NonNullPtr::assign(&mut data_link.next_ptr, first);
         }
-        NonNullPtr::set(head_ptr, data);
+        NonNullPtr::assign(head_ptr, data);
     }
 
     pub fn pop_front(self: Pin<&mut Self>) -> Option<NonNull<T>> {
@@ -139,7 +141,7 @@ where
             let mut data = unsafe { NonNull::new_unchecked(first.as_mut().get_mut()) };
             let first_link = A::as_link_mut(first);
             if let Some(first_next) = NonNullPtr::as_raw_ptr(&mut first_link.next_ptr) {
-                NonNullPtr::set(head_ptr, first_next);
+                NonNullPtr::assign(head_ptr, first_next);
             } else {
                 *head_ptr = None;
             }
@@ -173,7 +175,7 @@ where
     pub fn iter(self: Pin<&Self>) -> Iter<T, A, P> {
         let self_ = Pin::into_inner(self);
         Iter {
-            link_ptr: &self_.link,
+            link_ptr: self_.link.next_ptr.as_ref(),
             _marker: PhantomData,
         }
     }
@@ -181,7 +183,7 @@ where
     pub fn iter_mut(self: Pin<&mut Self>) -> IterMut<T, A, P> {
         let self_ = Pin::into_inner(self);
         IterMut {
-            link_ptr: &mut self_.link,
+            link_ptr: self_.link.next_ptr.as_mut(),
             _marker: PhantomData,
         }
     }

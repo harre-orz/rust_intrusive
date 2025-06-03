@@ -16,7 +16,7 @@ pub trait Size: Default {
     where
         I: Iterator,
     {
-        it.next().is_some()
+        it.next().is_none()
     }
 }
 

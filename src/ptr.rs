@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::ptr::NonNull;
 
 pub trait Pointer<T> {
-    fn set(&self, ptr: NonNull<T>) -> Self;
+    fn assign(self: &mut Self, raw_ptr: NonNull<T>);
 
     fn as_ref(&self) -> &T;
 
@@ -13,8 +13,8 @@ pub trait Pointer<T> {
 }
 
 impl<T> Pointer<T> for NonNull<T> {
-    fn set(&self, ptr: NonNull<T>) -> Self {
-        ptr
+    fn assign(self: &mut Self, raw_ptr: NonNull<T>) {
+        *self = raw_ptr;
     }
 
     fn as_ref(&self) -> &T {
@@ -38,13 +38,9 @@ where
     T: Unpin,
     P: Pointer<T>,
 {
-    pub fn set(self_: &mut Option<Pin<Self>>, ptr: NonNull<T>) {
-        let self_ptr = self_ as *const Option<Pin<Self>> as *const P;
-        *self_ = Some(Pin::new(NonNullPtr {
-            ptr: unsafe { &*self_ptr }.set(ptr),
-            _pin: PhantomPinned,
-            _marker: PhantomData,
-        }))
+    pub fn assign(self_: &mut Option<Pin<Self>>, raw_ptr: NonNull<T>) {
+        let self_ptr = self_ as *mut Option<Pin<Self>> as *mut P;
+        P::assign(unsafe { &mut *self_ptr }, raw_ptr);
     }
 
     pub fn as_raw_ptr(ptr: &mut Option<Pin<Self>>) -> Option<NonNull<T>> {

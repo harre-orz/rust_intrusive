@@ -432,7 +432,7 @@ where
         let mut item: *mut T = if let Some(item) = &mut self_.root {
             item.as_mut().get_mut()
         } else {
-            NonNullPtr::set(&mut self_.root, data);
+            NonNullPtr::assign(&mut self_.root, data);
             return None;
         };
         loop {
@@ -445,22 +445,22 @@ where
                             let top_link = A::as_link_mut(top);
                             if top_link.is_left(&mut *item) {
                                 // left
-                                NonNullPtr::set(&mut top_link.left_ptr, data);
+                                NonNullPtr::assign(&mut top_link.left_ptr, data);
                             } else {
                                 // right
-                                NonNullPtr::set(&mut top_link.right_ptr, data);
+                                NonNullPtr::assign(&mut top_link.right_ptr, data);
                             }
-                            NonNullPtr::set(&mut data_link.top_ptr, NonNull::new_unchecked(top));
+                            NonNullPtr::assign(&mut data_link.top_ptr, NonNull::new_unchecked(top));
                         };
                         if let Some(left) = &mut link.left_ptr {
                             let left: &mut T = left;
-                            NonNullPtr::set(&mut A::as_link_mut(left).top_ptr, data);
-                            NonNullPtr::set(&mut data_link.left_ptr, NonNull::new_unchecked(left));
+                            NonNullPtr::assign(&mut A::as_link_mut(left).top_ptr, data);
+                            NonNullPtr::assign(&mut data_link.left_ptr, NonNull::new_unchecked(left));
                         };
                         if let Some(right) = &mut link.right_ptr {
                             let right: &mut T = right;
-                            NonNullPtr::set(&mut A::as_link_mut(right).top_ptr, data);
-                            NonNullPtr::set(
+                            NonNullPtr::assign(&mut A::as_link_mut(right).top_ptr, data);
+                            NonNullPtr::assign(
                                 &mut data_link.right_ptr,
                                 NonNull::new_unchecked(right),
                             );
@@ -484,8 +484,8 @@ where
                 item = item_.as_mut().get_mut();
             } else {
                 let item = unsafe { NonNull::new_unchecked(item) };
-                NonNullPtr::set(&mut data_link.top_ptr, item);
-                NonNullPtr::set(item_ptr, data);
+                NonNullPtr::assign(&mut data_link.top_ptr, item);
+                NonNullPtr::assign(item_ptr, data);
                 return None;
             }
         }

@@ -178,11 +178,11 @@ where
         let tail_ptr = &mut self_.link.prev_ptr;
         if let Some(first) = head_ptr {
             let first = unsafe { NonNull::new_unchecked(first.as_mut().get_mut()) };
-            NonNullPtr::set(&mut data_link.next_ptr, first);
+            NonNullPtr::assign(&mut data_link.next_ptr, first);
         } else {
-            NonNullPtr::set(tail_ptr, data);
+            NonNullPtr::assign(tail_ptr, data);
         }
-        NonNullPtr::set(head_ptr, data);
+        NonNullPtr::assign(head_ptr, data);
     }
 
     pub fn push_back(self: Pin<&mut Self>, mut data: NonNull<T>) {
@@ -195,11 +195,11 @@ where
         let tail_ptr = &mut self_.link.prev_ptr;
         if let Some(last) = tail_ptr {
             let last = unsafe { NonNull::new_unchecked(last.as_mut().get_mut()) };
-            NonNullPtr::set(&mut data_link.prev_ptr, last);
+            NonNullPtr::assign(&mut data_link.prev_ptr, last);
         } else {
-            NonNullPtr::set(head_ptr, data);
+            NonNullPtr::assign(head_ptr, data);
         }
-        NonNullPtr::set(tail_ptr, data);
+        NonNullPtr::assign(tail_ptr, data);
     }
 
     pub fn pop_front(self: Pin<&mut Self>) -> Option<NonNull<T>> {
@@ -211,7 +211,7 @@ where
             let mut data = unsafe { NonNull::new_unchecked(first.as_mut().get_mut()) };
             let first_link = A::as_link_mut(first);
             if let Some(first_next) = NonNullPtr::as_raw_ptr(&mut first_link.next_ptr) {
-                NonNullPtr::set(head_ptr, first_next);
+                NonNullPtr::assign(head_ptr, first_next);
             } else {
                 *head_ptr = None;
                 *tail_ptr = None;
@@ -234,7 +234,7 @@ where
             let mut data = unsafe { NonNull::new_unchecked(last.as_mut().get_mut()) };
             let last_link = A::as_link_mut(last);
             if let Some(last_prev) = NonNullPtr::as_raw_ptr(&mut last_link.next_ptr) {
-                NonNullPtr::set(head_ptr, last_prev);
+                NonNullPtr::assign(head_ptr, last_prev);
             } else {
                 *head_ptr = None;
                 *tail_ptr = None;
