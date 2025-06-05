@@ -1,11 +1,17 @@
 use std::cmp::Ordering;
 
-pub trait Size: Default {
-    fn increment(&mut self) {}
+pub trait LinkAdapter<T>: Default {
+    type Link;
 
-    fn decrement(&mut self) {}
+    fn as_link_ref(data: &T) -> &Self::Link;
 
-    fn count<I>(&self, it: I) -> usize
+    fn as_link_mut(data: &mut T) -> &mut Self::Link;
+
+    fn incr(&mut self) {}
+
+    fn decr(&mut self) {}
+
+    fn len<I>(&self, it: I) -> usize
     where
         I: Iterator,
     {
@@ -20,23 +26,13 @@ pub trait Size: Default {
     }
 }
 
-pub trait Adapter<T>: Size {
-    type Link;
-
-    fn as_link_ref(data: &T) -> &Self::Link;
-
-    fn as_link_mut(data: &mut T) -> &mut Self::Link;
-}
-
-pub trait OrdAdapter<T>: Adapter<T> {
+pub trait OrdAdapter<T>: LinkAdapter<T> {
     fn cmp(left: &T, right: &T) -> Ordering;
 }
 
 pub mod ptr;
 
 pub mod slist;
-
 pub mod list;
-
-pub mod bintree;
+//pub mod bintree;
 // pub mod avltree;

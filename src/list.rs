@@ -1,4 +1,4 @@
-use super::Adapter;
+use super::LinkAdapter;
 use crate::ptr::{NonNullPtr, Pointer};
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -22,7 +22,7 @@ impl<T, P> Link<T, P> {
         self.next_ptr.is_some() || self.prev_ptr.is_some()
     }
 
-    unsafe fn unlink(&mut self) {
+    fn unlink(&mut self) {
         self.next_ptr = None;
         self.prev_ptr = None;
     }
@@ -37,7 +37,7 @@ impl<T, P> Default for Link<T, P> {
 impl<T, P> Unpin for Link<T, P> where T: Unpin {}
 
 pub struct Iter<'a, T, A, P> {
-    link_ptr: *const Link<T, P>,
+    link: *const Link<T, P>,
     _marker: PhantomData<&'a A>,
 }
 
@@ -45,14 +45,14 @@ impl<'a, T, A, P> Iterator for Iter<'a, T, A, P>
 where
     T: Unpin + 'a,
     P: Pointer<T> + 'a,
-    A: Adapter<T, Link = Link<T, P>>,
+    A: LinkAdapter<T, Link = Link<T, P>>,
 {
     type Item = Pin<&'a T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let link_ptr = unsafe { &*self.link_ptr };
-        if let Some(item) = &link_ptr.next_ptr {
-            self.link_ptr = A::as_link_ref(item);
+        let link = unsafe { &*self.link };
+        if let Some(item) = &link.next_ptr {
+            self.link = A::as_link_ref(item);
             Some(item.as_ref())
         } else {
             None
@@ -64,12 +64,12 @@ impl<'a, T, A, P> DoubleEndedIterator for Iter<'a, T, A, P>
 where
     T: Unpin + 'a,
     P: Pointer<T> + 'a,
-    A: Adapter<T, Link = Link<T, P>>,
+    A: LinkAdapter<T, Link = Link<T, P>>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-        let link_ptr = unsafe { &*self.link_ptr };
-        if let Some(item) = &link_ptr.prev_ptr {
-            self.link_ptr = A::as_link_ref(item);
+        let link = unsafe { &*self.link };
+        if let Some(item) = &link.prev_ptr {
+            self.link = A::as_link_ref(item);
             Some(item.as_ref())
         } else {
             None
@@ -78,7 +78,7 @@ where
 }
 
 pub struct IterMut<'a, T, A, P> {
-    link_ptr: *mut Link<T, P>,
+    link: *mut Link<T, P>,
     _marker: PhantomData<&'a A>,
 }
 
@@ -86,14 +86,14 @@ impl<'a, T, A, P> Iterator for IterMut<'a, T, A, P>
 where
     T: Unpin + 'a,
     P: Pointer<T> + 'a,
-    A: Adapter<T, Link = Link<T, P>>,
+    A: LinkAdapter<T, Link = Link<T, P>>,
 {
     type Item = Pin<&'a mut T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let link_ptr = unsafe { &mut *self.link_ptr };
-        if let Some(item) = &mut link_ptr.next_ptr {
-            self.link_ptr = A::as_link_mut(item);
+        let link = unsafe { &mut *self.link };
+        if let Some(item) = &mut link.next_ptr {
+            self.link = A::as_link_mut(item);
             Some(item.as_mut())
         } else {
             None
@@ -105,12 +105,12 @@ impl<'a, T, A, P> DoubleEndedIterator for IterMut<'a, T, A, P>
 where
     T: Unpin + 'a,
     P: Pointer<T> + 'a,
-    A: Adapter<T, Link = Link<T, P>>,
+    A: LinkAdapter<T, Link = Link<T, P>>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-        let link_ptr = unsafe { &mut *self.link_ptr };
-        if let Some(item) = &mut link_ptr.prev_ptr {
-            self.link_ptr = A::as_link_mut(item);
+        let link = unsafe { &mut *self.link };
+        if let Some(item) = &mut link.prev_ptr {
+            self.link = A::as_link_mut(item);
             Some(item.as_mut())
         } else {
             None
@@ -126,7 +126,7 @@ impl<'a, T, A, P> Iterator for IntoIter<'a, T, A, P>
 where
     T: Unpin,
     P: Pointer<T>,
-    A: Adapter<T, Link = Link<T, P>>,
+    A: LinkAdapter<T, Link = Link<T, P>>,
 {
     type Item = NonNull<T>;
 
@@ -139,7 +139,7 @@ impl<'a, T, A, P> DoubleEndedIterator for IntoIter<'a, T, A, P>
 where
     T: Unpin,
     P: Pointer<T>,
-    A: Adapter<T, Link = Link<T, P>>,
+    A: LinkAdapter<T, Link = Link<T, P>>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.item.as_mut().pop_back()
@@ -166,60 +166,60 @@ impl<T, A, P> DoublyLinkedList<T, A, P>
 where
     T: Unpin,
     P: Pointer<T>,
-    A: Adapter<T, Link = Link<T, P>>,
+    A: LinkAdapter<T, Link = Link<T, P>>,
 {
-    pub fn push_front(self: Pin<&mut Self>, mut data: NonNull<T>) {
-        let data_link = A::as_link_mut(unsafe { data.as_mut() });
-        debug_assert_eq!(data_link.is_linked(), false);
+    pub fn push_front(self: Pin<&mut Self>, mut item: NonNull<T>) {
+        let item_link = A::as_link_mut(unsafe { item.as_mut() });
+        debug_assert_eq!(item_link.is_linked(), false);
 
         let self_ = Pin::into_inner(self);
-        self_.size.increment();
         let head_ptr = &mut self_.link.next_ptr;
         let tail_ptr = &mut self_.link.prev_ptr;
-        if let Some(first) = head_ptr {
-            let first = unsafe { NonNull::new_unchecked(first.as_mut().get_mut()) };
-            NonNullPtr::assign(&mut data_link.next_ptr, first);
+        if let Some(head) = head_ptr {
+            let head_link = A::as_link_mut(head.as_mut().get_mut());
+            NonNullPtr::assign(&mut head_link.prev_ptr, item);
+            NonNullPtr::assign_pin(&mut item_link.next_ptr, head);
         } else {
-            NonNullPtr::assign(tail_ptr, data);
+            NonNullPtr::assign(tail_ptr, item);
         }
-        NonNullPtr::assign(head_ptr, data);
+        NonNullPtr::assign(head_ptr, item);
+        self_.size.incr();
     }
 
-    pub fn push_back(self: Pin<&mut Self>, mut data: NonNull<T>) {
-        let data_link = A::as_link_mut(unsafe { data.as_mut() });
-        debug_assert_eq!(data_link.is_linked(), false);
+    pub fn push_back(self: Pin<&mut Self>, mut item: NonNull<T>) {
+        let item_link = A::as_link_mut(unsafe { item.as_mut() });
+        debug_assert_eq!(item_link.is_linked(), false);
 
         let self_ = Pin::into_inner(self);
-        self_.size.increment();
         let head_ptr = &mut self_.link.next_ptr;
         let tail_ptr = &mut self_.link.prev_ptr;
-        if let Some(last) = tail_ptr {
-            let last = unsafe { NonNull::new_unchecked(last.as_mut().get_mut()) };
-            NonNullPtr::assign(&mut data_link.prev_ptr, last);
+        if let Some(tail) = tail_ptr {
+            let tail_link = A::as_link_mut(tail.as_mut().get_mut());
+            NonNullPtr::assign(&mut tail_link.next_ptr, item);
+            NonNullPtr::assign_pin(&mut item_link.prev_ptr, tail);
         } else {
-            NonNullPtr::assign(head_ptr, data);
+            NonNullPtr::assign(head_ptr, item);
         }
-        NonNullPtr::assign(tail_ptr, data);
+        NonNullPtr::assign(tail_ptr, item);
+        self_.size.incr();
     }
 
     pub fn pop_front(self: Pin<&mut Self>) -> Option<NonNull<T>> {
         let self_ = Pin::into_inner(self);
         let head_ptr = &mut self_.link.next_ptr;
-        let tail_ptr = &mut self_.link.prev_ptr;
-        if let Some(first) = head_ptr {
-            self_.size.decrement();
-            let mut data = unsafe { NonNull::new_unchecked(first.as_mut().get_mut()) };
-            let first_link = A::as_link_mut(first);
-            if let Some(first_next) = NonNullPtr::as_raw_ptr(&mut first_link.next_ptr) {
-                NonNullPtr::assign(head_ptr, first_next);
+        if let Some(head) = head_ptr {
+            let mut head = NonNull::from(head.as_mut().get_mut());
+            let head_link = A::as_link_mut(unsafe { head.as_mut() });
+            if let Some(next) = &mut head_link.next_ptr {
+                let next_link = A::as_link_mut(next.as_mut().get_mut());
+                NonNullPtr::assign_ptr(&mut next_link.prev_ptr, &mut head_link.prev_ptr);
+                NonNullPtr::assign_pin(head_ptr, next);
             } else {
-                *head_ptr = None;
-                *tail_ptr = None;
+                self_.link.unlink();
             }
-            unsafe {
-                A::as_link_mut(data.as_mut()).unlink();
-            }
-            Some(data)
+            head_link.unlink();
+            self_.size.decr();
+            Some(head)
         } else {
             None
         }
@@ -227,22 +227,20 @@ where
 
     pub fn pop_back(self: Pin<&mut Self>) -> Option<NonNull<T>> {
         let self_ = Pin::into_inner(self);
-        let head_ptr = &mut self_.link.next_ptr;
         let tail_ptr = &mut self_.link.prev_ptr;
-        if let Some(last) = tail_ptr {
-            self_.size.decrement();
-            let mut data = unsafe { NonNull::new_unchecked(last.as_mut().get_mut()) };
-            let last_link = A::as_link_mut(last);
-            if let Some(last_prev) = NonNullPtr::as_raw_ptr(&mut last_link.next_ptr) {
-                NonNullPtr::assign(head_ptr, last_prev);
+        if let Some(tail) = tail_ptr {
+            let mut tail = NonNull::from(tail.as_mut().get_mut());
+            let tail_link = A::as_link_mut(unsafe { tail.as_mut() });
+            if let Some(prev) = &mut tail_link.prev_ptr {
+                let prev_link = A::as_link_mut(prev.as_mut().get_mut());
+                NonNullPtr::assign_ptr(&mut prev_link.next_ptr, &mut tail_link.next_ptr);
+                NonNullPtr::assign_pin(tail_ptr, prev);
             } else {
-                *head_ptr = None;
-                *tail_ptr = None;
+                self_.link.unlink();
             }
-            unsafe {
-                A::as_link_mut(data.as_mut()).unlink();
-            }
-            Some(data)
+            tail_link.unlink();
+            self_.size.decr();
+            Some(tail)
         } else {
             None
         }
@@ -284,32 +282,32 @@ where
         }
     }
 
-    pub fn iter(self: Pin<&Self>) -> Iter<T, A, P> {
+    pub const fn iter(self: Pin<&Self>) -> Iter<T, A, P> {
         let self_ = Pin::into_inner(self);
         Iter {
-            link_ptr: &self_.link,
+            link: &self_.link,
             _marker: PhantomData,
         }
     }
 
-    pub fn iter_mut(self: Pin<&mut Self>) -> IterMut<T, A, P> {
+    pub const fn iter_mut(self: Pin<&mut Self>) -> IterMut<T, A, P> {
         let self_ = Pin::into_inner(self);
         IterMut {
-            link_ptr: &mut self_.link,
+            link: &mut self_.link,
             _marker: PhantomData,
         }
-    }
-
-    pub fn is_empty(self: Pin<&Self>) -> bool {
-        self.link.next_ptr.is_none()
     }
 
     pub fn into_iter(self: Pin<&mut Self>) -> IntoIter<T, A, P> {
         IntoIter { item: self }
     }
 
+    pub fn is_empty(self: Pin<&Self>) -> bool {
+        self.size.is_empty(self.iter())
+    }
+
     pub fn len(self: Pin<&Self>) -> usize {
-        self.size.count(self.iter())
+        self.size.len(self.iter())
     }
 
     pub fn contains(self: Pin<&Self>, data: &T) -> bool
@@ -339,7 +337,6 @@ impl<T, A, P> Unpin for DoublyLinkedList<T, A, P> where T: Unpin {}
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::Size;
 
     #[derive(Debug)]
     struct X {
@@ -358,12 +355,16 @@ mod test {
         }
     }
 
+    impl PartialEq for X {
+        fn eq(&self, other: &Self) -> bool {
+            self.x == other.x
+        }
+    }
+
     #[derive(Default, Debug)]
     struct XLink;
 
-    impl Size for XLink {}
-
-    impl Adapter<X> for XLink {
+    impl LinkAdapter<X> for XLink {
         type Link = Link<X>;
 
         fn as_link_ref(data: &X) -> &Self::Link {
@@ -376,21 +377,149 @@ mod test {
     }
 
     #[test]
-    fn test() {
+    fn test_empty() {
+        let mut lst = Box::pin(DoublyLinkedList::new(XLink));
+        assert_eq!(lst.as_ref().is_empty(), true);
+        assert_eq!(lst.as_ref().len(), 0);
+        assert_eq!(lst.as_ref().front(), None);
+        assert_eq!(lst.as_mut().front_mut(), None);
+        assert_eq!(lst.as_ref().back(), None);
+        assert_eq!(lst.as_mut().back_mut(), None);
+    }
+
+    #[test]
+    fn test_push_pop() {
         let mut lst = Box::pin(DoublyLinkedList::new(XLink));
         lst.as_mut().push_front(X::new(1));
+        // [1]
+        assert_eq!(lst.as_ref().front().unwrap().x, 1);
+        assert_eq!(lst.as_ref().back().unwrap().x, 1);
+        assert_eq!(lst.as_ref().is_empty(), false);
+        assert_eq!(lst.as_ref().len(), 1);
+
         lst.as_mut().push_front(X::new(2));
+        // [2,1]
+        assert_eq!(lst.as_ref().front().unwrap().x, 2);
+        assert_eq!(lst.as_ref().back().unwrap().x, 1);
+        assert_eq!(lst.as_ref().is_empty(), false);
+        assert_eq!(lst.as_ref().len(), 2);
 
-        let ptr = lst.as_mut().pop_front().unwrap();
-        let ptr = unsafe { Box::from_raw(ptr.as_ptr()) };
-        assert_eq!(ptr.link.is_linked(), false);
-        assert_eq!(ptr.x, 2);
+        lst.as_mut().push_front(X::new(3));
+        // [3,2,1]
+        assert_eq!(lst.as_ref().front().unwrap().x, 3);
+        assert_eq!(lst.as_ref().back().unwrap().x, 1);
+        assert_eq!(lst.as_ref().is_empty(), false);
+        assert_eq!(lst.as_ref().len(), 3);
 
-        let ptr = lst.as_mut().pop_front().unwrap();
-        let ptr = unsafe { Box::from_raw(ptr.as_ptr()) };
-        assert_eq!(ptr.link.is_linked(), false);
-        assert_eq!(ptr.x, 1);
+        let item = lst.as_mut().pop_front().unwrap();
+        let item = unsafe { Box::from_raw(item.as_ptr()) };
+        // [2,1]
+        assert_eq!(item.link.is_linked(), false);
+        assert_eq!(item.x, 3);
+        assert_eq!(lst.as_ref().len(), 2);
 
+        let item = lst.as_mut().pop_front().unwrap();
+        let item = unsafe { Box::from_raw(item.as_ptr()) };
+        // [1]
+        assert_eq!(item.link.is_linked(), false);
+        assert_eq!(item.x, 2);
+        assert_eq!(lst.as_ref().len(), 1);
+
+        lst.as_mut().push_front(X::new(4));
+        // [4,1]
+        assert_eq!(lst.as_ref().front().unwrap().x, 4);
+        assert_eq!(lst.as_ref().back().unwrap().x, 1);
+        assert_eq!(lst.as_ref().is_empty(), false);
+        assert_eq!(lst.as_ref().len(), 2);
+
+        lst.as_mut().push_front(X::new(5));
+        // [5,4,1]
+        assert_eq!(lst.as_ref().front().unwrap().x, 5);
+        assert_eq!(lst.as_ref().back().unwrap().x, 1);
+        assert_eq!(lst.as_ref().is_empty(), false);
+        assert_eq!(lst.as_ref().len(), 3);
+
+        let _ = lst.as_mut().pop_front().unwrap();
+        let _ = lst.as_mut().pop_front().unwrap();
+        let item = lst.as_mut().pop_front().unwrap();
+        let item = unsafe { Box::from_raw(item.as_ptr()) };
+        // []
+        assert_eq!(item.link.is_linked(), false);
+        assert_eq!(item.x, 1);
+        assert_eq!(lst.as_ref().is_empty(), true);
+        assert_eq!(lst.as_ref().len(), 0);
+        assert_eq!(lst.as_mut().pop_front(), None);
+    }
+
+    #[test]
+    fn test_push_pop_2() {
+        let mut lst = Box::pin(DoublyLinkedList::new(XLink));
+        lst.as_mut().push_back(X::new(1));
+        // [1]
+        assert_eq!(lst.as_ref().front().unwrap().x, 1);
+        assert_eq!(lst.as_ref().back().unwrap().x, 1);
+        assert_eq!(lst.as_ref().is_empty(), false);
+        assert_eq!(lst.as_ref().len(), 1);
+
+        lst.as_mut().push_back(X::new(2));
+        // [1,2]
+        assert_eq!(lst.as_ref().front().unwrap().x, 1);
+        assert_eq!(lst.as_ref().back().unwrap().x, 2);
+        assert_eq!(lst.as_ref().is_empty(), false);
+        assert_eq!(lst.as_ref().len(), 2);
+
+        lst.as_mut().push_front(X::new(3));
+        // [3,1,2]
+        assert_eq!(lst.as_ref().front().unwrap().x, 3);
+        assert_eq!(lst.as_ref().back().unwrap().x, 2);
+        assert_eq!(lst.as_ref().is_empty(), false);
+        assert_eq!(lst.as_ref().len(), 3);
+
+        lst.as_mut().push_back(X::new(4));
+        // [3,1,2,4]
+        assert_eq!(lst.as_ref().front().unwrap().x, 3);
+        assert_eq!(lst.as_ref().back().unwrap().x, 4);
+        assert_eq!(lst.as_ref().is_empty(), false);
+        assert_eq!(lst.as_ref().len(), 4);
+
+        let item = lst.as_mut().pop_back().unwrap();
+        let item = unsafe { Box::from_raw(item.as_ptr()) };
+        // [3,1,2]
+        assert_eq!(item.link.is_linked(), false);
+        assert_eq!(item.x, 4);
+        assert_eq!(lst.as_ref().len(), 3);
+
+        let item = lst.as_mut().pop_front().unwrap();
+        let item = unsafe { Box::from_raw(item.as_ptr()) };
+        // [1,2]
+        assert_eq!(item.link.is_linked(), false);
+        assert_eq!(item.x, 3);
+        assert_eq!(lst.as_ref().len(), 2);
+
+        lst.as_mut().push_back(X::new(4));
+        // [1,2,4]
+        assert_eq!(lst.as_ref().front().unwrap().x, 1);
+        assert_eq!(lst.as_ref().back().unwrap().x, 4);
+        assert_eq!(lst.as_ref().is_empty(), false);
+        assert_eq!(lst.as_ref().len(), 3);
+
+        lst.as_mut().push_front(X::new(5));
+        // [5,1,2,4]
+        assert_eq!(lst.as_ref().front().unwrap().x, 5);
+        assert_eq!(lst.as_ref().back().unwrap().x, 4);
+        assert_eq!(lst.as_ref().is_empty(), false);
+        assert_eq!(lst.as_ref().len(), 4);
+
+        let _ = lst.as_mut().pop_back().unwrap();
+        let _ = lst.as_mut().pop_back().unwrap();
+        let _ = lst.as_mut().pop_back().unwrap();
+        let item = lst.as_mut().pop_front().unwrap();
+        let item = unsafe { Box::from_raw(item.as_ptr()) };
+        // []
+        assert_eq!(item.link.is_linked(), false);
+        assert_eq!(item.x, 5);
+        assert_eq!(lst.as_ref().len(), 0);
+        assert_eq!(lst.as_ref().is_empty(), true);
         assert_eq!(lst.as_mut().pop_front(), None);
     }
 }

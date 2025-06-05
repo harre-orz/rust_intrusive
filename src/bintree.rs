@@ -1,5 +1,5 @@
 use crate::ptr::{NonNullPtr, Pointer};
-use crate::{Adapter, OrdAdapter};
+use crate::{LinkAdapter, OrdAdapter};
 use std::cmp::Ordering;
 use std::fmt;
 use std::marker::PhantomData;
@@ -90,90 +90,72 @@ where
     }
 }
 
-enum IterInner<'a, T, P> {
-    Init(&'a Option<Pin<NonNullPtr<T, P>>>),
-    Ptr(*const Pin<NonNullPtr<T, P>>),
-}
-
 pub struct Iter<'a, T, A, P> {
-    inner: IterInner<'a, T, P>,
-    _marker: PhantomData<A>,
+    link: *const Link<T, P>,
+    _marker: PhantomData<&'a A>,
 }
 
 impl<'a, T, A, P> Iter<'a, T, A, P>
 where
     T: Unpin + 'a,
     P: Pointer<T> + 'a,
-    A: Adapter<T, Link = Link<T, P>>,
+    A: LinkAdapter<T, Link = Link<T, P>>,
 {
-    fn leftest_ptr(ptr: &Option<Pin<NonNullPtr<T, P>>>) -> *const Pin<NonNullPtr<T, P>> {
-        let mut item_ptr = if let Some(item) = ptr {
-            item as *const Pin<NonNullPtr<T, P>>
-        } else {
-            return ptr::null();
-        };
+    fn left_end_leaf(ptr: &Pin<NonNullPtr<T, P>>) -> Pin<&T> {
+        let mut item_ptr = ptr.as_ref().get_ref();
         loop {
-            let link = A::as_link_ref(unsafe { &*item_ptr });
-            if let Some(item) = &link.left_ptr {
-                item_ptr = item
+            let item = unsafe { &*item_ptr };
+            let link = A::as_link_ref(item);
+            if let Some(next) = &link.left_ptr {
+                item_ptr = next.as_ref().get_ref();
             } else {
-                return item_ptr;
+                return Pin::new(item);
             }
         }
     }
-
-    fn rightest_ptr(ptr: &Option<Pin<NonNullPtr<T, P>>>) -> *const Pin<NonNullPtr<T, P>> {
-        let mut item_ptr = if let Some(item) = ptr {
-            item as *const Pin<NonNullPtr<T, P>>
-        } else {
-            return ptr::null();
-        };
-        loop {
-            let link = A::as_link_ref(unsafe { &*item_ptr });
-            if let Some(item) = &link.right_ptr {
-                item_ptr = item
-            } else {
-                return item_ptr;
-            }
-        }
-    }
+    // fn leftest_ptr(ptr: &Option<Pin<NonNullPtr<T, P>>>) -> *const Pin<NonNullPtr<T, P>> {
+    //     let mut item_ptr = if let Some(item) = ptr {
+    //         item as *const Pin<NonNullPtr<T, P>>
+    //     } else {
+    //         return ptr::null();
+    //     };
+    //     loop {
+    //         let link = A::as_link_ref(unsafe { &*item_ptr });
+    //         if let Some(item) = &link.left_ptr {
+    //             item_ptr = item
+    //         } else {
+    //             return item_ptr;
+    //         }
+    //     }
+    // }
+    //
+    // fn rightest_ptr(ptr: &Option<Pin<NonNullPtr<T, P>>>) -> *const Pin<NonNullPtr<T, P>> {
+    //     let mut item_ptr = if let Some(item) = ptr {
+    //         item as *const Pin<NonNullPtr<T, P>>
+    //     } else {
+    //         return ptr::null();
+    //     };
+    //     loop {
+    //         let link = A::as_link_ref(unsafe { &*item_ptr });
+    //         if let Some(item) = &link.right_ptr {
+    //             item_ptr = item
+    //         } else {
+    //             return item_ptr;
+    //         }
+    //     }
+    // }
 }
 
 impl<'a, T, A, P> Iterator for Iter<'a, T, A, P>
 where
     T: Unpin + 'a,
     P: Pointer<T> + 'a,
-    A: Adapter<T, Link = Link<T, P>>,
+    A: LinkAdapter<T, Link = Link<T, P>>,
 {
     type Item = Pin<&'a T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            match &self.inner {
-                IterInner::Init(init) => self.inner = IterInner::Ptr(Self::leftest_ptr(init)),
-                IterInner::Ptr(ptr) if ptr.is_null() => return None,
-                IterInner::Ptr(mut ptr) => {
-                    let item = unsafe { &*ptr };
-                    let link = A::as_link_ref(item);
-                    let mut next = Self::leftest_ptr(&link.right_ptr);
-                    if next.is_null() {
-                        let mut top_ptr = &link.top_ptr as *const Option<Pin<NonNullPtr<T, P>>>;
-                        while let Some(top) = unsafe { &*top_ptr } {
-                            let link = A::as_link_ref(top);
-                            if link.is_right(unsafe { &*ptr }) {
-                                ptr = top;
-                            } else {
-                                next = top;
-                                break;
-                            }
-                            top_ptr = &link.top_ptr;
-                        }
-                    }
-                    self.inner = IterInner::Ptr(next);
-                    return Some(Pin::new(item));
-                }
-            }
-        }
+        None
     }
 }
 
@@ -181,44 +163,15 @@ impl<'a, T, A, P> DoubleEndedIterator for Iter<'a, T, A, P>
 where
     T: Unpin + 'a,
     P: Pointer<T> + 'a,
-    A: Adapter<T, Link = Link<T, P>>,
+    A: LinkAdapter<T, Link = Link<T, P>>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-        loop {
-            match &self.inner {
-                IterInner::Init(init) => self.inner = IterInner::Ptr(Self::rightest_ptr(init)),
-                IterInner::Ptr(ptr) if ptr.is_null() => return None,
-                IterInner::Ptr(mut ptr) => {
-                    let item = unsafe { &*ptr };
-                    let link = A::as_link_ref(item);
-                    let mut next = Self::rightest_ptr(&link.left_ptr);
-                    if next.is_null() {
-                        let mut top_ptr = &link.top_ptr as *const Option<Pin<NonNullPtr<T, P>>>;
-                        while let Some(top) = unsafe { &*top_ptr } {
-                            if A::as_link_ref(top).is_left(unsafe { &*ptr }) {
-                                ptr = top;
-                            } else {
-                                next = top;
-                                break;
-                            }
-                            top_ptr = &A::as_link_ref(top).top_ptr;
-                        }
-                    }
-                    self.inner = IterInner::Ptr(next);
-                    return Some(Pin::new(item));
-                }
-            }
-        }
+        None
     }
 }
 
-enum IterMutInner<'a, T, P> {
-    Init(&'a mut Option<Pin<NonNullPtr<T, P>>>),
-    Ptr(*mut Pin<NonNullPtr<T, P>>),
-}
-
 pub struct IterMut<'a, T, A, P> {
-    inner: IterMutInner<'a, T, P>,
+    link: *mut Link<T, P>,
     _marker: PhantomData<&'a A>,
 }
 
@@ -226,7 +179,7 @@ impl<'a, T, A, P> IterMut<'a, T, A, P>
 where
     T: Unpin + 'a,
     P: Pointer<T> + 'a,
-    A: Adapter<T, Link = Link<T, P>>,
+    A: LinkAdapter<T, Link = Link<T, P>>,
 {
     fn leftest_ptr(ptr: &mut Option<Pin<NonNullPtr<T, P>>>) -> *mut Pin<NonNullPtr<T, P>> {
         let mut item_ptr = if let Some(item) = ptr {
@@ -265,36 +218,12 @@ impl<'a, T, A, P> Iterator for IterMut<'a, T, A, P>
 where
     T: Unpin + 'a,
     P: Pointer<T> + 'a,
-    A: Adapter<T, Link = Link<T, P>>,
+    A: LinkAdapter<T, Link = Link<T, P>>,
 {
     type Item = Pin<&'a mut T>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            match &mut self.inner {
-                IterMutInner::Init(init) => self.inner = IterMutInner::Ptr(Self::leftest_ptr(init)),
-                IterMutInner::Ptr(ptr) if ptr.is_null() => return None,
-                IterMutInner::Ptr(mut ptr) => {
-                    let item = unsafe { &mut *ptr };
-                    let link = A::as_link_mut(item);
-                    let mut next = Self::leftest_ptr(&mut link.right_ptr);
-                    if next.is_null() {
-                        let mut top_ptr = &mut link.top_ptr as *mut Option<Pin<NonNullPtr<T, P>>>;
-                        while let Some(top) = unsafe { &mut *top_ptr } {
-                            if A::as_link_mut(top).is_right(unsafe { &mut *ptr }) {
-                                ptr = top;
-                            } else {
-                                next = top;
-                                break;
-                            }
-                            top_ptr = &mut A::as_link_mut(top).top_ptr;
-                        }
-                    }
-                    self.inner = IterMutInner::Ptr(next);
-                    return Some(Pin::new(item));
-                }
-            }
-        }
+        None
     }
 }
 
@@ -302,48 +231,22 @@ impl<'a, T, A, P> DoubleEndedIterator for IterMut<'a, T, A, P>
 where
     T: Unpin + 'a,
     P: Pointer<T> + 'a,
-    A: Adapter<T, Link = Link<T, P>>,
+    A: LinkAdapter<T, Link = Link<T, P>>,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
-        loop {
-            match &mut self.inner {
-                IterMutInner::Init(init) => {
-                    self.inner = IterMutInner::Ptr(Self::rightest_ptr(init))
-                }
-                IterMutInner::Ptr(ptr) if ptr.is_null() => return None,
-                IterMutInner::Ptr(mut ptr) => {
-                    let item = unsafe { &mut *ptr };
-                    let link = A::as_link_mut(item);
-                    let mut next = Self::rightest_ptr(&mut link.left_ptr);
-                    if next.is_null() {
-                        let mut top_ptr = &mut link.top_ptr as *mut Option<Pin<NonNullPtr<T, P>>>;
-                        while let Some(top) = unsafe { &mut *top_ptr } {
-                            if A::as_link_mut(top).is_left(unsafe { &mut *ptr }) {
-                                ptr = top;
-                            } else {
-                                next = top;
-                                break;
-                            }
-                            top_ptr = &mut A::as_link_mut(top).top_ptr;
-                        }
-                    }
-                    self.inner = IterMutInner::Ptr(next);
-                    return Some(Pin::new(item));
-                }
-            }
-        }
+        None
     }
 }
 
 pub struct BinTree<T, A, P = NonNull<T>> {
-    root: Option<Pin<NonNullPtr<T, P>>>,
+    link: Link<T, P>,
     size: A,
 }
 
 impl<T, A, P> BinTree<T, A, P> {
     pub const fn new(adapter: A) -> Self {
         Self {
-            root: None,
+            link: Link::new(),
             size: adapter,
         }
     }
@@ -353,14 +256,14 @@ impl<T, A, P> BinTree<T, A, P>
 where
     T: Unpin,
     P: Pointer<T>,
-    A: Adapter<T, Link = Link<T, P>> + OrdAdapter<T>,
+    A: LinkAdapter<T, Link = Link<T, P>> + OrdAdapter<T>,
 {
-    pub fn get(self: Pin<&Self>, data: &T) -> Option<Pin<&T>> {
+    pub fn get(self: Pin<&Self>, key: &T) -> Option<Pin<&T>> {
         let self_ = Pin::into_inner(self);
-        let mut node_ptr: *const Option<Pin<NonNullPtr<T, P>>> = &self_.root;
+        let mut node_ptr = &self_.link.top_ptr as *const Option<Pin<NonNullPtr<T, P>>>;
         loop {
             if let Some(node) = unsafe { &*node_ptr } {
-                match A::cmp(node.as_ref().get_ref(), data) {
+                match A::cmp(node.as_ref().get_ref(), key) {
                     Ordering::Equal => return Some(Pin::new(node)),
                     Ordering::Less => {
                         let link: &Link<T, P> = A::as_link_ref(node);
@@ -377,12 +280,12 @@ where
         }
     }
 
-    pub fn get_mut(self: Pin<&mut Self>, data: &T) -> Option<Pin<&mut T>> {
+    pub fn get_mut(self: Pin<&mut Self>, key: &T) -> Option<Pin<&mut T>> {
         let self_ = Pin::into_inner(self);
-        let mut node_ptr: *mut Option<Pin<NonNullPtr<T, P>>> = &mut self_.root;
+        let mut node_ptr: *mut Option<Pin<NonNullPtr<T, P>>> = &mut self_.link.top_ptr;
         loop {
             if let Some(node) = unsafe { &mut *node_ptr } {
-                match A::cmp(node.as_ref().get_ref(), data) {
+                match A::cmp(node.as_ref().get_ref(), key) {
                     Ordering::Equal => return Some(Pin::new(node)),
                     Ordering::Less => {
                         let link: &mut Link<T, P> = A::as_link_mut(node);
@@ -423,70 +326,56 @@ where
         None
     }
 
-    pub fn insert(self: Pin<&mut Self>, mut data: NonNull<T>) -> Option<NonNull<T>> {
-        let data_link = A::as_link_mut(unsafe { data.as_mut() });
-        debug_assert_eq!(data_link.is_linked(), false);
+    pub fn insert(self: Pin<&mut Self>, mut item: NonNull<T>) -> Option<NonNull<T>> {
+        let item_link = A::as_link_mut(unsafe { item.as_mut() });
+        debug_assert_eq!(item_link.is_linked(), false);
 
         let self_ = Pin::into_inner(self);
-        self_.size.increment();
-        let mut item: *mut T = if let Some(item) = &mut self_.root {
-            item.as_mut().get_mut()
+        self_.size.incr();
+        let mut node = if let Some(node) = &mut self_.link.top_ptr {
+            node as *mut Pin<NonNullPtr<T, P>>
         } else {
-            NonNullPtr::assign(&mut self_.root, data);
+            NonNullPtr::assign(&mut self_.link.top_ptr, item);
+            NonNullPtr::assign(&mut self_.link.left_ptr, item);
+            NonNullPtr::assign(&mut self_.link.right_ptr, item);
             return None;
         };
+        let mut is_left_end = true;
+        let mut is_right_end = true;
         loop {
-            let item_ptr = match unsafe { A::cmp(&*item, data.as_ref()) } {
-                Ordering::Equal => {
-                    unsafe {
-                        let link = A::as_link_mut(&mut *item);
-                        if let Some(top) = &mut link.top_ptr {
-                            let top: &mut T = top;
-                            let top_link = A::as_link_mut(top);
-                            if top_link.is_left(&mut *item) {
-                                // left
-                                NonNullPtr::assign(&mut top_link.left_ptr, data);
-                            } else {
-                                // right
-                                NonNullPtr::assign(&mut top_link.right_ptr, data);
-                            }
-                            NonNullPtr::assign(&mut data_link.top_ptr, NonNull::new_unchecked(top));
-                        };
-                        if let Some(left) = &mut link.left_ptr {
-                            let left: &mut T = left;
-                            NonNullPtr::assign(&mut A::as_link_mut(left).top_ptr, data);
-                            NonNullPtr::assign(&mut data_link.left_ptr, NonNull::new_unchecked(left));
-                        };
-                        if let Some(right) = &mut link.right_ptr {
-                            let right: &mut T = right;
-                            NonNullPtr::assign(&mut A::as_link_mut(right).top_ptr, data);
-                            NonNullPtr::assign(
-                                &mut data_link.right_ptr,
-                                NonNull::new_unchecked(right),
-                            );
-                        };
-                        link.unlink();
-                        return Some(NonNull::new_unchecked(item));
-                    }
-                }
-                Ordering::Greater => {
-                    let item = unsafe { &mut *item };
-                    let link: &mut Link<T, P> = A::as_link_mut(item);
-                    &mut link.left_ptr
-                }
+            let cmp = A::cmp(unsafe { item.as_ref() }, unsafe { &*node }.as_ref().get_ref());
+            match cmp {
                 Ordering::Less => {
-                    let item = unsafe { &mut *item };
-                    let link: &mut Link<T, P> = A::as_link_mut(item);
-                    &mut link.right_ptr
-                }
-            };
-            if let Some(item_) = item_ptr {
-                item = item_.as_mut().get_mut();
-            } else {
-                let item = unsafe { NonNull::new_unchecked(item) };
-                NonNullPtr::assign(&mut data_link.top_ptr, item);
-                NonNullPtr::assign(item_ptr, data);
-                return None;
+                    // item < node
+                    let link = A::as_link_mut(unsafe { &mut *node }.as_mut().get_mut());
+                    if let Some(node_) = &mut link.left_ptr {
+                        node = node_;
+                    } else {
+                        NonNullPtr::assign_pin(&mut item_link.top_ptr, unsafe { &mut *node });
+                        NonNullPtr::assign(&mut link.left_ptr, item);
+                        if is_left_end {
+                            NonNullPtr::assign(&mut self_.link.left_ptr, item);
+                        }
+                        return None
+                    }
+                    is_right_end = false;
+                },
+                Ordering::Greater => {
+                    // item > node
+                    let link = A::as_link_mut(unsafe { &mut *node }.as_mut().get_mut());
+                    if let Some(node_) = &mut link.right_ptr {
+                        node = node_;
+                    } else {
+                        NonNullPtr::assign_pin(&mut item_link.top_ptr, unsafe { &mut *node });
+                        NonNullPtr::assign(&mut link.right_ptr, item);
+                        if is_right_end {
+                            NonNullPtr::assign(&mut self_.link.right_ptr, item);
+                        }
+                        return None
+                    }
+                    is_left_end = false;
+                },
+                _ => return Some(item),
             }
         }
     }
@@ -498,7 +387,7 @@ where
     pub fn iter(self: Pin<&Self>) -> Iter<T, A, P> {
         let self_ = Pin::into_inner(self);
         Iter {
-            inner: IterInner::Init(&self_.root),
+            link: &self_.link,
             _marker: PhantomData,
         }
     }
@@ -506,17 +395,17 @@ where
     pub fn iter_mut(self: Pin<&mut Self>) -> IterMut<T, A, P> {
         let self_ = Pin::into_inner(self);
         IterMut {
-            inner: IterMutInner::Init(&mut self_.root),
+            link: &mut self_.link,
             _marker: PhantomData,
         }
     }
 
     pub fn is_empty(self: Pin<&Self>) -> bool {
-        self.root.is_none()
+        self.size.is_empty(self.iter())
     }
 
     pub fn len(self: Pin<&Self>) -> usize {
-        self.size.count(self.iter())
+        self.size.len(self.iter())
     }
 }
 
@@ -538,7 +427,7 @@ where
     A: fmt::Debug,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        if let Some(root) = &self.root {
+        if let Some(root) = &self.link.top_ptr {
             write!(
                 fmt,
                 "BinTree {{ size: {:?}, root: ({:p}) {:?} }}",
@@ -555,7 +444,6 @@ where
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::Size;
 
     #[derive(Debug)]
     struct X {
@@ -577,9 +465,7 @@ mod test {
     #[derive(Debug, Default)]
     struct XLink;
 
-    impl Size for XLink {}
-
-    impl Adapter<X> for XLink {
+    impl LinkAdapter<X> for XLink {
         type Link = Link<X>;
 
         fn as_link_ref(data: &X) -> &Self::Link {

@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::ptr::NonNull;
 
 pub trait Pointer<T> {
-    fn assign(self: &mut Self, raw_ptr: NonNull<T>);
+    fn from_raw(raw_ptr: NonNull<T>, base: usize) -> Self;
 
     fn as_ref(&self) -> &T;
 
@@ -13,8 +13,9 @@ pub trait Pointer<T> {
 }
 
 impl<T> Pointer<T> for NonNull<T> {
-    fn assign(self: &mut Self, raw_ptr: NonNull<T>) {
-        *self = raw_ptr;
+    fn from_raw(raw_ptr: NonNull<T>, _: usize) -> Self
+    {
+        raw_ptr
     }
 
     fn as_ref(&self) -> &T {
@@ -38,17 +39,29 @@ where
     T: Unpin,
     P: Pointer<T>,
 {
-    pub fn assign(self_: &mut Option<Pin<Self>>, raw_ptr: NonNull<T>) {
-        let self_ptr = self_ as *mut Option<Pin<Self>> as *mut P;
-        P::assign(unsafe { &mut *self_ptr }, raw_ptr);
+    pub fn assign(this: &mut Option<Pin<Self>>, data: NonNull<T>)
+    {
+        let ptr = this as *mut Option<Pin<Self>>;
+        let ptr = P::from_raw(data, ptr.addr());
+        let ptr = NonNullPtr {
+            ptr: ptr,
+            _pin: PhantomPinned,
+            _marker: PhantomData,
+        };
+        *this = Some(Pin::new(ptr));
     }
 
-    pub fn as_raw_ptr(ptr: &mut Option<Pin<Self>>) -> Option<NonNull<T>> {
-        if let Some(ptr) = ptr {
-            let ptr = ptr.as_mut().get_mut();
-            Some(unsafe { NonNull::new_unchecked(ptr) })
+    pub fn assign_pin(this: &mut Option<Pin<Self>>, data: &mut Pin<Self>)
+    {
+        Self::assign(this, NonNull::from(data.as_mut().get_mut()))
+    }
+
+    pub fn assign_ptr(this: &mut Option<Pin<Self>>, data: &mut Option<Pin<Self>>)
+    {
+        if let Some(data) = data {
+            Self::assign_pin(this, data)
         } else {
-            None
+            *this = None;
         }
     }
 }
