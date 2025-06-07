@@ -1,11 +1,12 @@
-use std::fmt::Debug;
 use std::marker::{PhantomData, PhantomPinned};
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::ptr::NonNull;
+use std::fmt;
+use std::fmt::Formatter;
 
-pub trait Pointer<T> {
-    fn from_raw(raw_ptr: NonNull<T>, base: usize) -> Self;
+pub trait Pointer<T> : fmt::Debug {
+    fn from_raw(raw_ptr: NonNull<T>, self_addr: usize) -> Self;
 
     fn as_ref(&self) -> &T;
 
@@ -13,8 +14,7 @@ pub trait Pointer<T> {
 }
 
 impl<T> Pointer<T> for NonNull<T> {
-    fn from_raw(raw_ptr: NonNull<T>, _: usize) -> Self
-    {
+    fn from_raw(raw_ptr: NonNull<T>, _: usize) -> Self {
         raw_ptr
     }
 
@@ -27,7 +27,6 @@ impl<T> Pointer<T> for NonNull<T> {
     }
 }
 
-#[derive(Debug)]
 pub(crate) struct NonNullPtr<T, P> {
     ptr: P,
     _pin: PhantomPinned,
@@ -39,29 +38,26 @@ where
     T: Unpin,
     P: Pointer<T>,
 {
-    pub fn assign(this: &mut Option<Pin<Self>>, data: NonNull<T>)
-    {
-        let ptr = this as *mut Option<Pin<Self>>;
+    pub fn assign(self_: &mut Option<Pin<Self>>, data: NonNull<T>) {
+        let ptr = self_ as *mut Option<Pin<Self>>;
         let ptr = P::from_raw(data, ptr.addr());
         let ptr = NonNullPtr {
             ptr: ptr,
             _pin: PhantomPinned,
             _marker: PhantomData,
         };
-        *this = Some(Pin::new(ptr));
+        *self_ = Some(Pin::new(ptr));
     }
 
-    pub fn assign_pin(this: &mut Option<Pin<Self>>, data: &mut Pin<Self>)
-    {
-        Self::assign(this, NonNull::from(data.as_mut().get_mut()))
+    pub fn assign_pin(self_: &mut Option<Pin<Self>>, data: &mut Pin<Self>) {
+        Self::assign(self_, NonNull::from(data.as_mut().get_mut()))
     }
 
-    pub fn assign_ptr(this: &mut Option<Pin<Self>>, data: &mut Option<Pin<Self>>)
-    {
+    pub fn assign_ptr(self_: &mut Option<Pin<Self>>, data: &mut Option<Pin<Self>>) {
         if let Some(data) = data {
-            Self::assign_pin(this, data)
+            Self::assign_pin(self_, data)
         } else {
-            *this = None;
+            *self_ = None;
         }
     }
 }
@@ -83,5 +79,14 @@ where
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.ptr.as_mut()
+    }
+}
+
+impl<T, P> fmt::Debug for NonNullPtr<T, P>
+where
+    P: fmt::Debug
+{
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{:?}", self.ptr)
     }
 }

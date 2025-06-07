@@ -1,10 +1,12 @@
-use super::LinkAdapter;
+use crate::adapter::{LinkAdapter, Size};
 use crate::ptr::{NonNullPtr, Pointer};
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::ptr::NonNull;
+use std::cmp;
+use std::fmt;
+use std::fmt::Formatter;
 
-#[derive(Debug)]
 pub struct Link<T, P = NonNull<T>> {
     next_ptr: Option<Pin<NonNullPtr<T, P>>>,
     prev_ptr: Option<Pin<NonNullPtr<T, P>>>,
@@ -35,6 +37,47 @@ impl<T, P> Default for Link<T, P> {
 }
 
 impl<T, P> Unpin for Link<T, P> where T: Unpin {}
+
+impl<T, P> cmp::PartialEq for Link<T, P> {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl<T, P> cmp::Eq for Link<T, P> {}
+
+impl<T, P> cmp::PartialOrd for Link<T, P> {
+    fn partial_cmp(&self, _: &Self) -> Option<cmp::Ordering> {
+        Some(cmp::Ordering::Equal)
+    }
+}
+
+impl<T, P> cmp::Ord for Link<T, P> {
+    fn cmp(&self, _: &Self) -> cmp::Ordering {
+        cmp::Ordering::Equal
+    }
+}
+
+impl<T, P> fmt::Debug for Link<T, P>
+where
+    P: fmt::Debug,
+{
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{{ prev: ")?;
+        if let Some(prev) = &self.prev_ptr {
+            write!(f, "{:?}", prev)?;
+        } else {
+            write!(f, "0x0")?;
+        }
+        write!(f, ", next: ")?;
+        if let Some(next) = &self.next_ptr {
+            write!(f, "{:?}", next)?;
+        } else {
+            write!(f, "0x0")?;
+        }
+        write!(f, " }}")
+    }
+}
 
 pub struct Iter<'a, T, A, P> {
     link: *const Link<T, P>,
@@ -118,7 +161,10 @@ where
     }
 }
 
-pub struct IntoIter<'a, T, A, P> {
+pub struct IntoIter<'a, T, A, P>
+where
+    A: LinkAdapter<T>,
+{
     item: Pin<&'a mut DoublyLinkedList<T, A, P>>,
 }
 
@@ -146,21 +192,33 @@ where
     }
 }
 
-pub struct DoublyLinkedList<T, A, P> {
+#[derive(Debug)]
+pub struct DoublyLinkedList<T, A, P>
+where
+    A: LinkAdapter<T>,
+{
+    size: A::Size,
     link: Link<T, P>,
-    size: A,
 }
 
-impl<T, A, P> DoublyLinkedList<T, A, P> {
-    pub const fn new(adapter: A) -> Self {
+impl<T, A, P> DoublyLinkedList<T, A, P>
+where
+    A: LinkAdapter<T>,
+{
+    pub fn new(_: A) -> Self {
         Self {
+            size: Default::default(),
             link: Link::new(),
-            size: adapter,
         }
     }
 }
 
-impl<T, A, P> DoublyLinkedList<T, A, P> where T: Unpin {}
+impl<T, A, P> DoublyLinkedList<T, A, P>
+where
+    T: Unpin,
+    A: LinkAdapter<T>,
+{
+}
 
 impl<T, A, P> DoublyLinkedList<T, A, P>
 where
@@ -325,47 +383,64 @@ where
 
 impl<T, A, P> Default for DoublyLinkedList<T, A, P>
 where
-    A: Default,
+    A: LinkAdapter<T> + Default,
 {
     fn default() -> Self {
         Self::new(A::default())
     }
 }
 
-impl<T, A, P> Unpin for DoublyLinkedList<T, A, P> where T: Unpin {}
+impl<T, A, P> Unpin for DoublyLinkedList<T, A, P>
+where
+    T: Unpin,
+    A: LinkAdapter<T>,
+{
+}
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::adapter::NumerateSize;
 
-    #[derive(Debug)]
+    #[derive(PartialEq, Eq, PartialOrd, Ord)]
     struct X {
-        x: i32,
+        data: i32,
         link: Link<Self>,
     }
 
     impl X {
-        pub fn new(x: i32) -> NonNull<Self> {
+        fn new(data: i32) -> NonNull<Self> {
             let ptr = Box::new(X {
-                x: x,
+                data: data,
                 link: Link::new(),
             });
             let ptr = Box::into_raw(ptr);
             NonNull::new(ptr).unwrap()
         }
-    }
 
-    impl PartialEq for X {
-        fn eq(&self, other: &Self) -> bool {
-            self.x == other.x
+        fn from(data: Option<NonNull<Self>>) -> Option<Box<Self>> {
+            if let Some(data) = data {
+                let ptr = unsafe { Box::from_raw(data.as_ptr()) };
+                assert_eq!(ptr.link.is_linked(), false);
+                Some(ptr)
+            } else {
+                None
+            }
         }
     }
 
-    #[derive(Default, Debug)]
+    impl fmt::Debug for X {
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            write!(f, "X ({:p}) {{ data: {:?}, link: {:?} }}", self, self.data, self.link)
+        }
+    }
+
+    #[derive(Debug)]
     struct XLink;
 
     impl LinkAdapter<X> for XLink {
         type Link = Link<X>;
+        type Size = NumerateSize;
 
         fn as_link_ref(data: &X) -> &Self::Link {
             &data.link
@@ -392,60 +467,59 @@ mod test {
         let mut lst = Box::pin(DoublyLinkedList::new(XLink));
         lst.as_mut().push_front(X::new(1));
         // [1]
-        assert_eq!(lst.as_ref().front().unwrap().x, 1);
-        assert_eq!(lst.as_ref().back().unwrap().x, 1);
+        assert_eq!(lst.as_ref().front().unwrap().data, 1);
         assert_eq!(lst.as_ref().is_empty(), false);
         assert_eq!(lst.as_ref().len(), 1);
 
         lst.as_mut().push_front(X::new(2));
         // [2,1]
-        assert_eq!(lst.as_ref().front().unwrap().x, 2);
-        assert_eq!(lst.as_ref().back().unwrap().x, 1);
+        assert_eq!(lst.as_ref().front().unwrap().data, 2);
+        assert_eq!(lst.as_ref().back().unwrap().data, 1);
         assert_eq!(lst.as_ref().is_empty(), false);
         assert_eq!(lst.as_ref().len(), 2);
 
         lst.as_mut().push_front(X::new(3));
         // [3,2,1]
-        assert_eq!(lst.as_ref().front().unwrap().x, 3);
-        assert_eq!(lst.as_ref().back().unwrap().x, 1);
+        assert_eq!(lst.as_ref().front().unwrap().data, 3);
+        assert_eq!(lst.as_ref().back().unwrap().data, 1);
         assert_eq!(lst.as_ref().is_empty(), false);
         assert_eq!(lst.as_ref().len(), 3);
 
-        let item = lst.as_mut().pop_front().unwrap();
-        let item = unsafe { Box::from_raw(item.as_ptr()) };
+        let item = X::from(lst.as_mut().pop_front()).unwrap();
         // [2,1]
         assert_eq!(item.link.is_linked(), false);
-        assert_eq!(item.x, 3);
+        assert_eq!(item.data, 3);
         assert_eq!(lst.as_ref().len(), 2);
 
-        let item = lst.as_mut().pop_front().unwrap();
-        let item = unsafe { Box::from_raw(item.as_ptr()) };
+        let item = X::from(lst.as_mut().pop_front()).unwrap();
         // [1]
         assert_eq!(item.link.is_linked(), false);
-        assert_eq!(item.x, 2);
+        assert_eq!(item.data, 2);
         assert_eq!(lst.as_ref().len(), 1);
 
         lst.as_mut().push_front(X::new(4));
         // [4,1]
-        assert_eq!(lst.as_ref().front().unwrap().x, 4);
-        assert_eq!(lst.as_ref().back().unwrap().x, 1);
+        assert_eq!(lst.as_ref().front().unwrap().data, 4);
+        assert_eq!(lst.as_ref().back().unwrap().data, 1);
         assert_eq!(lst.as_ref().is_empty(), false);
         assert_eq!(lst.as_ref().len(), 2);
 
         lst.as_mut().push_front(X::new(5));
         // [5,4,1]
-        assert_eq!(lst.as_ref().front().unwrap().x, 5);
-        assert_eq!(lst.as_ref().back().unwrap().x, 1);
+        // println!("{:?}", lst);
+        // println!("f = {:?}", lst.as_ref().front().unwrap());
+        // println!("l = {:?}", lst.as_ref().back().unwrap());
+        assert_eq!(lst.as_ref().front().unwrap().data, 5);
+        assert_eq!(lst.as_ref().back().unwrap().data, 1);
         assert_eq!(lst.as_ref().is_empty(), false);
         assert_eq!(lst.as_ref().len(), 3);
 
-        let _ = lst.as_mut().pop_front().unwrap();
-        let _ = lst.as_mut().pop_front().unwrap();
-        let item = lst.as_mut().pop_front().unwrap();
-        let item = unsafe { Box::from_raw(item.as_ptr()) };
+        let _ = lst.as_mut().pop_front();
+        let _ = lst.as_mut().pop_front();
+        let item = X::from(lst.as_mut().pop_front()).unwrap();
         // []
         assert_eq!(item.link.is_linked(), false);
-        assert_eq!(item.x, 1);
+        assert_eq!(item.data, 1);
         assert_eq!(lst.as_ref().is_empty(), true);
         assert_eq!(lst.as_ref().len(), 0);
         assert_eq!(lst.as_mut().pop_front(), None);
@@ -456,68 +530,65 @@ mod test {
         let mut lst = Box::pin(DoublyLinkedList::new(XLink));
         lst.as_mut().push_back(X::new(1));
         // [1]
-        assert_eq!(lst.as_ref().front().unwrap().x, 1);
-        assert_eq!(lst.as_ref().back().unwrap().x, 1);
+        assert_eq!(lst.as_ref().front().unwrap().data, 1);
+        assert_eq!(lst.as_ref().back().unwrap().data, 1);
         assert_eq!(lst.as_ref().is_empty(), false);
         assert_eq!(lst.as_ref().len(), 1);
 
         lst.as_mut().push_back(X::new(2));
         // [1,2]
-        assert_eq!(lst.as_ref().front().unwrap().x, 1);
-        assert_eq!(lst.as_ref().back().unwrap().x, 2);
+        assert_eq!(lst.as_ref().front().unwrap().data, 1);
+        assert_eq!(lst.as_ref().back().unwrap().data, 2);
         assert_eq!(lst.as_ref().is_empty(), false);
         assert_eq!(lst.as_ref().len(), 2);
 
         lst.as_mut().push_front(X::new(3));
         // [3,1,2]
-        assert_eq!(lst.as_ref().front().unwrap().x, 3);
-        assert_eq!(lst.as_ref().back().unwrap().x, 2);
+        assert_eq!(lst.as_ref().front().unwrap().data, 3);
+        assert_eq!(lst.as_ref().back().unwrap().data, 2);
         assert_eq!(lst.as_ref().is_empty(), false);
         assert_eq!(lst.as_ref().len(), 3);
 
         lst.as_mut().push_back(X::new(4));
         // [3,1,2,4]
-        assert_eq!(lst.as_ref().front().unwrap().x, 3);
-        assert_eq!(lst.as_ref().back().unwrap().x, 4);
+        assert_eq!(lst.as_ref().front().unwrap().data, 3);
+        assert_eq!(lst.as_ref().back().unwrap().data, 4);
         assert_eq!(lst.as_ref().is_empty(), false);
         assert_eq!(lst.as_ref().len(), 4);
 
-        let item = lst.as_mut().pop_back().unwrap();
-        let item = unsafe { Box::from_raw(item.as_ptr()) };
+        let item = X::from(lst.as_mut().pop_back()).unwrap();
         // [3,1,2]
         assert_eq!(item.link.is_linked(), false);
-        assert_eq!(item.x, 4);
+        assert_eq!(item.data, 4);
         assert_eq!(lst.as_ref().len(), 3);
 
-        let item = lst.as_mut().pop_front().unwrap();
-        let item = unsafe { Box::from_raw(item.as_ptr()) };
+        let item = X::from(lst.as_mut().pop_front()).unwrap();
         // [1,2]
         assert_eq!(item.link.is_linked(), false);
-        assert_eq!(item.x, 3);
+        assert_eq!(item.data, 3);
         assert_eq!(lst.as_ref().len(), 2);
 
         lst.as_mut().push_back(X::new(4));
         // [1,2,4]
-        assert_eq!(lst.as_ref().front().unwrap().x, 1);
-        assert_eq!(lst.as_ref().back().unwrap().x, 4);
+        assert_eq!(lst.as_ref().front().unwrap().data, 1);
+        assert_eq!(lst.as_ref().back().unwrap().data, 4);
         assert_eq!(lst.as_ref().is_empty(), false);
         assert_eq!(lst.as_ref().len(), 3);
 
         lst.as_mut().push_front(X::new(5));
         // [5,1,2,4]
-        assert_eq!(lst.as_ref().front().unwrap().x, 5);
-        assert_eq!(lst.as_ref().back().unwrap().x, 4);
+        assert_eq!(lst.as_ref().front().unwrap().data, 5);
+        assert_eq!(lst.as_ref().back().unwrap().data, 4);
         assert_eq!(lst.as_ref().is_empty(), false);
         assert_eq!(lst.as_ref().len(), 4);
 
         let _ = lst.as_mut().pop_back().unwrap();
         let _ = lst.as_mut().pop_back().unwrap();
         let _ = lst.as_mut().pop_back().unwrap();
-        let item = lst.as_mut().pop_front().unwrap();
-        let item = unsafe { Box::from_raw(item.as_ptr()) };
+        let item = X::from(lst.as_mut().pop_front()).unwrap();
         // []
         assert_eq!(item.link.is_linked(), false);
-        assert_eq!(item.x, 5);
+        assert_eq!(item.data, 5);
         assert_eq!(lst.as_ref().len(), 0);
         assert_eq!(lst.as_ref().is_empty(), true);
         assert_eq!(lst.as_mut().pop_front(), None);
