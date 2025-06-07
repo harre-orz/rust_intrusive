@@ -1,7 +1,6 @@
 use std::fmt;
-use std::fmt::Formatter;
 
-pub(crate) trait Size: Default {
+pub trait Size: Default {
     fn incr(&mut self);
 
     fn decr(&mut self);
@@ -19,9 +18,9 @@ pub trait LinkAdapter<T> {
     type Link;
     type Size: Size;
 
-    fn as_link_ref(data: &T) -> &Self::Link;
+    fn link_ref(data: &T) -> &Self::Link;
 
-    fn as_link_mut(data: &mut T) -> &mut Self::Link;
+    fn link_mut(data: &mut T) -> &mut Self::Link;
 }
 
 #[derive(Default)]
@@ -47,9 +46,8 @@ impl Size for NumerateSize {
     }
 }
 
-impl fmt::Debug for NumerateSize
-{
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+impl fmt::Debug for NumerateSize {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "#")
     }
 }
@@ -81,9 +79,8 @@ impl Size for LiterateSize {
     }
 }
 
-impl fmt::Debug for LiterateSize
-{
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+impl fmt::Debug for LiterateSize {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }

@@ -1,11 +1,11 @@
+use std::fmt;
+use std::fmt::Formatter;
 use std::marker::{PhantomData, PhantomPinned};
 use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::ptr::NonNull;
-use std::fmt;
-use std::fmt::Formatter;
 
-pub trait Pointer<T> : fmt::Debug {
+pub trait Pointer<T>: fmt::Debug {
     fn from_raw(raw_ptr: NonNull<T>, self_addr: usize) -> Self;
 
     fn as_ref(&self) -> &T;
@@ -84,7 +84,7 @@ where
 
 impl<T, P> fmt::Debug for NonNullPtr<T, P>
 where
-    P: fmt::Debug
+    P: fmt::Debug,
 {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{:?}", self.ptr)

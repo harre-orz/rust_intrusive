@@ -1,11 +1,11 @@
 use crate::adapter::{LinkAdapter, Size};
 use crate::ptr::{NonNullPtr, Pointer};
 use std::cmp;
+use std::fmt;
+use std::fmt::Formatter;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::ptr::NonNull;
-use std::fmt;
-use std::fmt::Formatter;
 
 pub struct Link<T, P = NonNull<T>> {
     next_ptr: Option<Pin<NonNullPtr<T, P>>>,
@@ -84,7 +84,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         let link = unsafe { &*self.link };
         if let Some(item) = &link.next_ptr {
-            self.link = A::as_link_ref(item);
+            self.link = A::link_ref(item);
             Some(item.as_ref())
         } else {
             None
@@ -108,7 +108,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         let link = unsafe { &mut *self.link };
         if let Some(item) = &mut link.next_ptr {
-            self.link = A::as_link_mut(item);
+            self.link = A::link_mut(item);
             Some(item.as_mut())
         } else {
             None
@@ -164,7 +164,7 @@ where
     A: LinkAdapter<T, Link = Link<T, P>>,
 {
     pub fn push_front(self: Pin<&mut Self>, mut item: NonNull<T>) {
-        let item_link = A::as_link_mut(unsafe { item.as_mut() });
+        let item_link = A::link_mut(unsafe { item.as_mut() });
         debug_assert_eq!(item_link.is_linked(), false);
 
         let self_ = Pin::into_inner(self);
@@ -181,7 +181,7 @@ where
         let head_ptr = &mut self_.link.next_ptr;
         if let Some(head) = head_ptr {
             let mut head = NonNull::from(head.as_mut().get_mut());
-            let head_link = A::as_link_mut(unsafe { head.as_mut() });
+            let head_link = A::link_mut(unsafe { head.as_mut() });
             if let Some(next) = &mut head_link.next_ptr {
                 NonNullPtr::assign_pin(head_ptr, next);
             } else {
@@ -279,9 +279,9 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::fmt::Formatter;
     use super::*;
     use crate::adapter::NumerateSize;
+    use std::fmt::Formatter;
 
     #[derive(PartialEq, Eq, PartialOrd, Ord)]
     struct X {
@@ -312,7 +312,11 @@ mod test {
 
     impl fmt::Debug for X {
         fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-            write!(f, "X ({:p}) {{ data: {:?}, link: {:?} }}", self, self.data, self.link)
+            write!(
+                f,
+                "X ({:p}) {{ data: {:?}, link: {:?} }}",
+                self, self.data, self.link
+            )
         }
     }
 
@@ -323,11 +327,11 @@ mod test {
         type Link = Link<X>;
         type Size = NumerateSize;
 
-        fn as_link_ref(data: &X) -> &Self::Link {
+        fn link_ref(data: &X) -> &Self::Link {
             &data.link
         }
 
-        fn as_link_mut(data: &mut X) -> &mut Self::Link {
+        fn link_mut(data: &mut X) -> &mut Self::Link {
             &mut data.link
         }
     }
